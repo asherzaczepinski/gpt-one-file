@@ -242,6 +242,12 @@ def forward(window):
     #after all 6 blocks: one last layer norm, then the head turns each token's 128 numbers into a score for
     #every one of the 4841 tokens. the scores at spot t are the guess for what comes after token t
     vectors, final_cache = layer_norm(vectors, params["final_layer_norm_scale"], params["final_layer_norm_shift"])
+    #picking!!!!
+    #head_weights is (128, 4841): one column per token in the vocab, each column 128 numbers long
+    #each token's score = its vector · that token's column (multiply the 128 matching numbers, add them up)
+    #big when they line up, so each column is like a template for "what the vector looks like right before me"
+    #   vector at 'Once' · column for ' upon' = 4.1     · column for ' a' = 1.3     · column for ' cat' = -2.0   ... all 4841
+    #every spot does this at once: (64, 128) @ (128, 4841) -> (64, 4841)
     #logits = the raw scores, before softmax. one number per possible next token, and it can be anything (negative, 0, 12...)
     #they are NOT probabilities yet: bigger just means "more likely". softmax turns them into probabilities that add to 1
     #   logits for the next token after 'Once':   ' upon': 4.1   ' a': 1.3   ' cat': -2.0   ...
@@ -281,6 +287,22 @@ def forward(window):
     return logits, (window, block_caches, final_cache, head_cache)
 
 
+#the simple version of what get_loss does:
+#   1. the model gives a probability to EVERY token at every spot. it has no idea which one is right
+#   2. WE know the right one, because we have the real text (that's targets)
+#   3. so we just look up what probability the model gave the right one, and score it: -log(that probability)
+#
+#tiny example: pretend the whole vocab is only 4 tokens:   0 = 'Once'   1 = ' upon'   2 = ' a'   3 = ' time'
+#   window  = ['Once', ' upon']        targets = [' upon', ' a']  ->  ids [1, 2]
+#
+#                        'Once'   ' upon'   ' a'   ' time'
+#   spot 0 (after 'Once')   0.14     0.61     0.22     0.03     right answer ' upon' (id 1) -> it gave it 0.61
+#   spot 1 (after ' upon')  0.10     0.17     0.46     0.28     right answer ' a'    (id 2) -> it gave it 0.46
+#
+#   loss at spot 0 = -log(0.61) = 0.50
+#   loss at spot 1 = -log(0.46) = 0.79
+#   loss = average = 0.64          (the example right under get_loss runs this for real)
+#
 #how wrong it was: for every spot, -log(probability it gave the right next token), averaged
 #   sure and right (p = 0.9) -> 0.1        sure and wrong (p = 0.001) -> 6.9
 #
@@ -309,6 +331,14 @@ def get_loss(logits, targets):
     right_answer_scores = shifted[np.arange(len(targets)), targets]
     #-log(probability of the right answer) at every spot, then average the 64 of them into one number
     return float(np.mean(log_of_total - right_answer_scores))
+
+#the tiny example from above, for real
+tiny_logits = np.array([[0.5, 2.0, 1.0, -1.0],     # spot 0: raw scores for 'Once', ' upon', ' a', ' time'
+                        [0.0, 0.5, 1.5,  1.0]])    # spot 1
+tiny_targets = np.array([1, 2])                     # the right answers: ' upon', then ' a'
+tiny_probabilities = softmax(tiny_logits)           # [[0.14 0.61 0.22 0.03], [0.10 0.17 0.46 0.28]]
+right_ones = tiny_probabilities[np.arange(2), tiny_targets]   # row 0 column 1, row 1 column 2 -> [0.61 0.46]
+print(right_ones.round(2), np.mean(-np.log(right_ones)).round(3), round(get_loss(tiny_logits, tiny_targets), 3))   # same number both ways: 0.641
 
 
 #the targets are the same window shifted by one, so every spot's answer is the next token
