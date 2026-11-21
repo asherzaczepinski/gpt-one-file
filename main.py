@@ -101,4 +101,134 @@ print(scores.shape)          # (4, 64, 64)
 print(scores[0, :3, :3])     # head 0: how much 'Once', ' upon', ' a' care about each other (random for now)
 
 
+#next step: hide the future. a token can only look at itself and the tokens BEFORE it
+#otherwise in training it could just peek at the next word instead of learning to guess it
+#np.triu(..., k=1) makes a (64, 64) grid that's True above the diagonal, which is every "later token" spot
+#   token 0 can see [0]    token 1 can see [0, 1]    token 63 can see [0 ... 63]
+future = np.triu(np.ones((len(window), len(window)), dtype=bool), k=1)
 
+#put -1e9 (basically negative infinity) in every future spot. softmax turns that into a weight of 0 next step
+#the same (64, 64) grid gets used for all 4 heads automatically
+scores = np.where(future, -1e9, scores)
+
+print(future[:4, :4])        # True = hidden. row 0 hides everything after it, row 3 hides nothing in the first 4
+print(scores[0, :4, :4])     # head 0: the hidden spots are now -1e9
+
+#next step: softmax. turns each row of scores into weights that are all positive and add up to 1
+#so each token ends up with "how much should I listen to each token before me", like 70% this one, 20% that one...
+#
+#how it does it, with one row of 3 scores [2.0, 1.0, 0.1]:
+#   1. e^x on every score         [7.39, 2.72, 1.11]   e^x is always positive, and bigger scores get WAY bigger
+#   2. divide by the total 11.22  [0.659, 0.242, 0.099]  now they add up to 1
+#a future spot is -1e9, and e^-1e9 is 0, so hidden tokens get exactly 0 weight
+#
+#subtracting the row's biggest score first gives the exact same answer (it cancels out when you divide)
+#but stops e^x from blowing up to infinity if a score is big. axis=-1 = do it across each row
+def softmax(scores):
+    exps = np.exp(scores - scores.max(axis=-1, keepdims=True))
+    return exps / exps.sum(axis=-1, keepdims=True)
+
+#(4, 64, 64): for each head, row i = how much token i listens to each token 0..63
+weights = softmax(scores)
+
+
+#next step: use the weights to add up the values. this is where tokens actually pass info to each other
+#each token's new vector = (weight on token 0 * value of token 0) + (weight on token 1 * value of token 1) + ...
+#so tokens it listens to a lot count a lot, and hidden future tokens (weight 0) add nothing
+#
+#example for ' upon' (token 1) in head 0, weights [0.484, 0.516, 0, 0, ...]:
+#   gathered = 0.484 * value of 'Once' + 0.516 * value of ' upon'
+#
+#one matrix multiply does all the multiplying AND adding, for every token in every head at once:
+#(4, 64, 64) @ (4, 64, 32) -> (4, 64, 32): each head, each token, 32 numbers of info gathered from earlier tokens
+#
+#why add up the VALUES and not just the original embeddings (normalized_vectors)?
+#because "how do I find this token" and "what should this token pass along" are two different jobs
+#   query = what am I looking for       key = what makes me findable       value = what I hand over once found
+#
+#real example: "Tom lost his red ball. He was very sad."
+#   when the model is at "He", one head wants to find who "He" is
+#   - "He"'s QUERY says something like "looking for a person's name that came before"
+#   - "Tom"'s KEY says "I'm a name, I'm a person". that's what makes the match happen (big score)
+#   - "Tom"'s VALUE is what actually gets copied into "He": "male character, the one this story is about"
+#     that's the stuff that helps guess what comes next ("was", "sad", later "his")
+#   another head at "He" might be looking for adjectives, match "red", and its value passes "red"-ness instead
+#
+#if we added up the original embeddings instead:
+#   - "He" would get ALL of Tom's raw 128 numbers, including stuff it doesn't need (its position, how it's spelled...)
+#   - every head would pass the exact same thing. 4 heads would just be 4 different mixes of the same vectors,
+#     instead of 4 different kinds of info. with values, each head has its own value weights (its own 32 columns
+#     of qkv_weights), so each head pulls out a different 32-number summary of the same token
+#   - each head only has 32 numbers to work with, so it can't carry all 128 anyway. the value weights learn
+#     to squeeze in just what that head's job needs
+#
+#why this approach won: the early attention models (around 2014, for translation) did basically that, weighting
+#the original hidden vectors directly. the 2017 "Attention Is All You Need" paper (the transformer, where GPT
+#comes from) gave each head its own learned query, key AND value matrices. having separate heads was clearly
+#better in their tests (one big head scored noticeably worse at translating), and separate heads only make sense
+#if each one gets its own values. it costs almost nothing: the value part is just 128 more columns in qkv_weights
+
+gathered = weights @ values
+
+print(gathered.shape)    # (4, 64, 32)
+
+#next step: glue the 4 heads back together, then one more matrix. this finishes attention
+#this is the opposite of when we cut into heads:
+#transpose: (4, 64, 32) -> (64, 4, 32)   group by token again, so each token has its 4 head results
+#reshape: (64, 4, 32) -> (64, 128)       put each token's 4 results side by side: head 0's 32, then head 1's 32, ...
+gathered = gathered.transpose(1, 0, 2).reshape(len(window), embedding_size)
+
+#then one more linear layer (128 -> 128). right now the 4 heads' results are just sitting next to each other,
+#this lets every output number mix info from all 4 heads
+output_weights = random_generator.normal(0, 0.02, (embedding_size, embedding_size))
+output_bias = np.zeros(embedding_size)
+attention_output = linear(gathered, output_weights, output_bias)
+
+print(attention_output.shape)   # (64, 128): back to one 128-number vector per token, same shape we started with
+
+
+#next step: add attention's result onto the original vectors (the "residual")
+#we ADD instead of replacing, so each token keeps what it already knew and adds what it just learned from the others
+#   ' He' before: "the word He, at spot 6"     after: "the word He, at spot 6, + it means Tom"
+#it also makes training way easier: when training works backward, the + gives it a straight path back through
+#every block, so the early blocks still get useful nudges even with lots of blocks stacked on top
+vectors = vectors + attention_output
+
+#next step: layer norm again before the mlp, same function, but its own scale and shift
+layer_norm2_scale = np.ones(embedding_size)
+layer_norm2_shift = np.zeros(embedding_size)
+normalized_vectors = layer_norm(vectors, layer_norm2_scale, layer_norm2_shift)
+
+#next step: the mlp (a mini neural network) part 1: widen each token from 128 numbers to 512 (4 times wider)
+#attention was tokens talking to each other. the mlp is each token thinking on its own, no looking at other tokens
+#the extra room lets it check for lots of patterns at once, each of the 512 numbers is like one "detector"
+#   (e.g. one might end up lighting up for "this is a name", another for "a sentence is about to end")
+expand_weights = random_generator.normal(0, 0.02, (embedding_size, 4 * embedding_size))
+expand_bias = np.zeros(4 * embedding_size)
+wide = linear(normalized_vectors, expand_weights, expand_bias)    # (64, 512)
+
+#next step: gelu, the bend. positive numbers pass through, negative ones get squashed to about 0
+#   gelu([-2, 0, 2]) = [-0.045, 0, 1.955]
+#so a detector that's positive "fires", and one that's negative stays quiet
+#why it's needed: two matrix multiplies in a row with nothing between them are the same as one matrix multiply,
+#so without the bend the mlp could only learn straight-line rules. the bend is what lets it learn "if this AND that"
+#(0.7978845608 is sqrt(2/pi) and 0.044715 is a number from the gelu paper, it's a smooth version of "max(0, x)")
+def gelu(x):
+    return 0.5 * x * (1 + np.tanh(0.7978845608 * (x + 0.044715 * x ** 3)))
+
+bent = gelu(wide)                                                  # (64, 512)
+
+#next step: the mlp part 2: shrink back down from 512 to 128, so it fits back onto the token's vector
+#this mixes the detectors that fired into the 128 numbers the rest of the model uses
+shrink_weights = random_generator.normal(0, 0.02, (4 * embedding_size, embedding_size))
+shrink_bias = np.zeros(embedding_size)
+mlp_output = linear(bent, shrink_weights, shrink_bias)             # (64, 128)
+
+#next step: add the mlp's result on top too (the 2nd residual), same reason as before
+vectors = vectors + mlp_output
+
+#that's one whole block done:
+#   layer norm -> attention -> add it on -> layer norm -> mlp -> add it on
+#same shape in, same shape out, so the next block can take these vectors and do the same thing again
+print(gelu(np.array([-2.0, 0.0, 2.0])).round(3))   # [-0.045  0.     1.955]
+print(wide.shape, mlp_output.shape, vectors.shape)  # (64, 512) (64, 128) (64, 128)
