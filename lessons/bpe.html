@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byte Pair Encoding</title>
+<style>
+:root {
+  --bg: #f7f3ea;
+  --paper: #fffdf7;
+  --ink: #1f1b16;
+  --muted: #6b6257;
+  --line: #e3dccd;
+  --accent: #b4441f;
+  --accent-soft: #f6dfd3;
+  --byte: #ece6d9;
+  --byte-ink: #4a4237;
+  --merged: #dbe9e1;
+  --merged-ink: #1d5a3c;
+  --new: #f9e3a8;
+  --new-ink: #6b4b00;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519; --byte: #2d281f; --byte-ink: #d6ccb9;
+    --merged: #1d3428; --merged-ink: #9fdcb9; --new: #45360f; --new-ink: #f5d27a;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519; --byte: #2d281f; --byte-ink: #d6ccb9;
+  --merged: #1d3428; --merged-ink: #9fdcb9; --new: #45360f; --new-ink: #f5d27a;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; }
+
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2.2em 0 .6em; }
+h3 { font-size: 1.05rem; margin: 1.6em 0 .4em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+
+.eyebrow {
+  font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .12em; color: var(--accent);
+}
+.lede { font-size: 1.15rem; color: var(--muted); }
+
+.card {
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 22px; margin: 1.2em 0; box-shadow: var(--shadow);
+}
+.card > :last-child { margin-bottom: 0; }
+
+/* The input → output strip */
+.io { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: stretch; margin: 1.2em 0; }
+.io .box { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.io .label { font: 600 .72rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 8px; }
+.io .arrow { display: flex; align-items: center; font-size: 1.6rem; color: var(--accent); }
+.io .box p { margin: 0; font-size: .95rem; }
+@media (max-width: 600px) {
+  .io { grid-template-columns: 1fr; }
+  .io .arrow { justify-content: center; transform: rotate(90deg); }
+}
+
+/* Token chips */
+.tokens { display: flex; flex-wrap: wrap; gap: 5px; margin: .5em 0; }
+.tok {
+  display: inline-flex; flex-direction: column; align-items: center;
+  font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .85rem;
+  background: var(--byte); color: var(--byte-ink);
+  border-radius: 6px; padding: 3px 7px 2px; min-width: 1.6em; white-space: pre;
+}
+.tok small { font-size: .62rem; opacity: .7; }
+.tok.m { background: var(--merged); color: var(--merged-ink); }
+.tok.n { background: var(--new); color: var(--new-ink); outline: 1.5px solid currentColor; }
+.tok.hl { outline: 2px solid var(--accent); }
+.sp { opacity: .55; }
+
+table { border-collapse: collapse; width: 100%; font-size: .92rem; margin: .6em 0 1em; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .74rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+td.num { font-family: "SF Mono", Menlo, monospace; text-align: right; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+
+.note {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0;
+}
+.note > :last-child { margin-bottom: 0; }
+
+ol.steps { padding-left: 1.3em; }
+ol.steps li { margin-bottom: .6em; }
+
+/* Function list at the top */
+.lessons { list-style: none; padding: 0; margin: 1em 0; display: grid; gap: 10px; }
+.lessons a {
+  display: grid; grid-template-columns: 2.4em 1fr; gap: 4px 12px; align-items: baseline;
+  text-decoration: none; color: inherit;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  transition: border-color .15s, transform .15s;
+}
+.lessons a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.lessons .n { font: 700 1.2rem/1 "Avenir Next", system-ui, sans-serif; color: var(--accent); grid-row: span 2; }
+.lessons .t { font: 600 1rem/1.3 "Avenir Next", system-ui, sans-serif; }
+.lessons .d { color: var(--muted); font-size: .92rem; }
+
+nav.top { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-bottom: 28px; }
+nav.top a { text-decoration: none; }
+nav.pager { display: flex; justify-content: space-between; gap: 12px; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); font-family: "Avenir Next", system-ui, sans-serif; font-size: .92rem; }
+nav.pager a { text-decoration: none; max-width: 48%; }
+nav.pager .r { text-align: right; margin-left: auto; }
+nav.pager small { display: block; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+
+button {
+  font: 600 .9rem/1 "Avenir Next", system-ui, sans-serif;
+  background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button:disabled { opacity: .4; cursor: default; }
+input[type="text"] {
+  font: 1rem "SF Mono", Menlo, monospace; width: 100%; padding: 9px 11px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+}
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+
+h4 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; font-size: 1rem; margin: 1.4em 0 .4em; }
+section.fn { margin-top: 64px; padding-top: 24px; border-top: 2px solid var(--line); }
+section.fn > h2 { font-size: 1.9rem; margin: .2em 0 .3em; }
+section.fn > h2 .mono { font-size: .95em; }
+.toc a .t { font-family: "SF Mono", Menlo, monospace; }
+.back { font: 500 .85rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 28px; }
+.back a { text-decoration: none; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow" id="top">Step 2 of the GPT · Splitting text into tokens</div>
+<h1>Byte Pair Encoding</h1>
+<p class="lede">A model can only do math on numbers. Byte pair encoding (BPE) is how the text of a million-character storybook becomes a list of numbers, by learning which chunks of text show up together most often and giving each chunk its own ID.</p>
+
+<h2>The problem it solves</h2>
+<p>Before the model can read <em>"Once upon a time"</em>, each piece of that text needs an ID number, a bit like a locker number. The question is how big the pieces should be.</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Piece size</th><th>Vocabulary</th><th>Length of a story</th><th>Catch</th></tr>
+  <tr><td>One per letter</td><td>Tiny (~100)</td><td>Very long</td><td>The model wastes effort re-learning that <i>t-h-e</i> spells "the" every time</td></tr>
+  <tr><td>One per word</td><td>Huge (100,000+)</td><td>Short</td><td>Any word it has never seen, like a name or a typo, can't be written at all</td></tr>
+  <tr><td><b>BPE chunks</b></td><td><b>You pick (here 512)</b></td><td><b>Medium</b></td><td><b>Common words become one token, and rare ones get spelled out from smaller pieces</b></td></tr>
+</table>
+</div>
+
+<div class="note">
+<p><b>The idea in one sentence:</b> start with the 256 possible bytes, then over and over find the two neighbouring tokens that appear side by side most often and glue them into one new token, until you have as many tokens as you want.</p>
+</div>
+
+<h2>The loop, in pictures</h2>
+<p>Take the word "the" followed by a space. It starts out as four separate bytes:</p>
+<div class="tokens" data-t='[["t",116],["h",104],["e",101],["␣",32]]'></div>
+<p>In the stories, <b>"e" followed by a space</b> is the most common neighbouring pair (3,542 times in the training text), so it is the first thing glued together and becomes token 256:</p>
+<div class="tokens" data-t='[["t",116],["h",104],["e␣",256,"n"]]'></div>
+<p>Two rounds later, <b>"t" + "h"</b> wins and becomes token 258:</p>
+<div class="tokens" data-t='[["th",258,"n"],["e␣",256,"m"]]'></div>
+<p>Ten rounds after that, those two merged pieces are themselves the most common pair, and "the␣" becomes a single token, 268:</p>
+<div class="tokens" data-t='[["the␣",268,"n"]]'></div>
+<p>So merges are built out of earlier merges. Small pieces grow into syllables, then words, and eventually whole phrases. By the end of training on these stories, <span class="mono">"One day, "</span> is a single token.</p>
+<div class="legend">
+  <span><i style="background:var(--byte)"></i>a raw byte (0–255)</span>
+  <span><i style="background:var(--merged)"></i>an earlier merge</span>
+  <span><i style="background:var(--new)"></i>the merge just made</span>
+</div>
+
+<h2>Two phases: learning the rules, then using them</h2>
+<div class="io">
+  <div class="box"><div class="label">Training · once</div><p>Read 100,000 characters of stories. Repeat the count-and-glue loop 256 times. Write down every merge, in order. The result is a <b>rulebook</b> of 256 merges and a <b>dictionary</b> of 512 tokens.</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Using · any time</div><p><b>Encode:</b> turn any text into bytes, then replay the rulebook in the same order. <b>Decode:</b> look up each ID's bytes and stick them back together.</p></div>
+</div>
+
+<h2>What it actually does to the stories</h2>
+<p>These come from running the tokenizer in <span class="mono">gpt.txt</span> on <span class="mono">stories.txt</span>:</p>
+<div class="scroll">
+<table>
+  <tr><th>Text</th><th>As bytes</th><th>As BPE tokens</th></tr>
+  <tr><td>the cat</td><td class="num">7</td><td><div class="tokens" data-t='[["the␣",268,"m"],["c",99],["at",388,"m"]]'></div></td></tr>
+  <tr><td>Once upon a time</td><td class="num">16</td><td><div class="tokens" data-t='[["Once␣upon␣a␣tim",453,"m"],["e",101]]'></div></td></tr>
+  <tr><td>Tom lost his red ball.</td><td class="num">22</td><td><div class="tokens" data-t='[["Tom␣",469,"m"],["lo",305,"m"],["s",115],["t␣",261,"m"],["his␣",423,"m"],["r",114],["ed␣",267,"m"],["ba",364,"m"],["ll",291,"m"],[".",46]]'></div></td></tr>
+  <tr><td>All 100,000 training characters</td><td class="num">100,048</td><td class="num" style="text-align:left">41,024 tokens, about 2.4× shorter</td></tr>
+</table>
+</div>
+<p>Shorter sequences mean the model can see more of a story at once within its fixed window of 64 tokens, and every token carries more meaning.</p>
+
+<h2>Try it yourself</h2>
+<div class="card">
+  <p style="margin-bottom:.5em">Type some text, then press <b>Merge</b> to run one round of the loop.</p>
+  <input type="text" id="demo-in" value="the cat sat on the mat. the hat." aria-label="Text to tokenize">
+  <div class="row">
+    <button id="demo-step">Merge the top pair</button>
+    <button id="demo-all" class="ghost">Merge until done</button>
+    <button id="demo-reset" class="ghost">Reset</button>
+    <span id="demo-len" class="mono" style="color:var(--muted)"></span>
+  </div>
+  <div id="demo-toks" class="tokens"></div>
+  <h3>Most common neighbouring pairs right now</h3>
+  <div id="demo-pairs"></div>
+  <h3>Rulebook so far</h3>
+  <div id="demo-rules" style="color:var(--muted)">No merges yet. Every token is a single byte.</div>
+</div>
+
+<h2>The seven functions</h2>
+<p>Each section below covers one function from step 2 of <span class="mono">gpt.txt</span>. There's no code, just what the function is for, what goes in, and what comes out.</p>
+<ul class="lessons toc">
+  <li><a href="#read_text"><span class="n">1</span><span class="t">read_text</span><span class="d">A file on disk → one long string of characters</span></a></li>
+  <li><a href="#new_tokenizer"><span class="n">2</span><span class="t">new_tokenizer</span><span class="d">Nothing → a blank tokenizer that knows only the 256 bytes</span></a></li>
+  <li><a href="#count_pairs"><span class="n">3</span><span class="t">count_pairs</span><span class="d">A list of IDs → a tally of every side-by-side pair</span></a></li>
+  <li><a href="#merge"><span class="n">4</span><span class="t">merge</span><span class="d">A list of IDs + one pair → a shorter list with that pair glued</span></a></li>
+  <li><a href="#tok_train"><span class="n">5</span><span class="t">tok_train</span><span class="d">Text + a target size → a rulebook of learned merges</span></a></li>
+  <li><a href="#tok_encode"><span class="n">6</span><span class="t">tok_encode</span><span class="d">Any text → a list of token IDs</span></a></li>
+  <li><a href="#tok_decode"><span class="n">7</span><span class="t">tok_decode</span><span class="d">A list of token IDs → readable text again</span></a></li>
+</ul>
+
+<div class="note">
+<p><b>Where it goes next:</b> the list of IDs from <span class="mono">tok_encode</span> is all the model ever sees. In step 3, each ID is swapped for a row of learned numbers (its embedding). At the very end, the model's guess for the next ID goes through <span class="mono">tok_decode</span> to become words again.</p>
+</div>
+
+<section class="fn" id="read_text">
+<div class="eyebrow">Function 1 of 7</div>
+<h2><span class="mono">read_text</span></h2>
+<p class="lede">Get the raw material. This function takes a file sitting on your disk and hands back everything in it as one long string of characters.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A file path, such as <span class="mono">stories.txt</span></p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>One string, 1,000,516 characters long</p></div>
+</div>
+
+<h3>The goal</h3>
+<p>Everything that follows (counting pairs, learning merges, training the model) needs the text in memory as a single piece. <span class="mono">read_text</span> opens the file, reads every character from the first to the last, and returns it all at once.</p>
+
+<h3>How the input changes</h3>
+<p>Hardly at all, which is the point. On disk, the file is a stream of stored bytes. Afterwards it's a string that your program can slice, measure, and loop over. The stories begin like this:</p>
+<div class="card mono" style="white-space:pre-wrap;font-size:.85rem">Once upon a time, in a warm and sunny place, there was a big pit. A little boy named Tom liked to play near the pit. One day, Tom lost his red ball. He was very sad.↵
+Tom asked his friend, Sam, to help him search for the ball. …</div>
+<p>Nothing is cleaned up or removed:</p>
+<ul>
+  <li><b>Capitals stay capitals.</b> "Once" and "once" are different text, and they'll end up as different tokens.</li>
+  <li><b>Punctuation stays.</b> Commas, full stops, and quotation marks are all characters like any other.</li>
+  <li><b>Line breaks stay</b> (shown here as ↵). They mark where one story ends and the next begins.</li>
+</ul>
+
+<div class="note">
+<p><b>It reads the file as UTF-8.</b> UTF-8 is the standard rule for storing letters as bytes. Plain English letters take one byte each, while something like "é" takes two. That's why the file is 1,000,910 bytes but only 1,000,516 characters: a few characters in the stories need more than one byte. This difference matters in <a href="#new_tokenizer">new_tokenizer</a>.</p>
+</div>
+
+<h3>Where its output goes</h3>
+<p>The full string gets used twice:</p>
+<ol class="steps">
+  <li>The <b>first 100,000 characters</b> go to <a href="#tok_train">tok_train</a> to learn the merges. A tenth of the book is plenty to find out which letter pairs are common, and it's ten times faster.</li>
+  <li>The <b>whole million characters</b> go to <a href="#tok_encode">tok_encode</a> afterwards, becoming the token IDs the model trains on.</li>
+</ol>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="new_tokenizer">
+<div class="eyebrow">Function 2 of 7</div>
+<h2><span class="mono">new_tokenizer</span></h2>
+<p class="lede">Set up an empty tokenizer. It starts out knowing only the 256 single bytes and has learned no merges yet.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>Nothing</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>A tokenizer with two parts: an empty <b>rulebook</b> and a <b>dictionary</b> of 256 entries</p></div>
+</div>
+
+<h3>The goal</h3>
+<p>Training needs somewhere to write down what it learns, and that somewhere has to start from a sensible base. The tokenizer is just two lists kept side by side:</p>
+
+<div class="card">
+  <h4 style="margin-top:0">The rulebook (<span class="mono">merges</span>)</h4>
+  <p>Each rule says "when these two IDs sit next to each other, replace them with this new ID." It starts <b>empty</b>. By the end of training it holds 256 rules, kept in the order they were learned.</p>
+  <h4>The dictionary (<span class="mono">vocab</span>)</h4>
+  <p>For every ID, the exact bytes that ID stands for. It starts with <b>256 entries</b>, one for each possible byte value from 0 to 255. By the end it holds 512.</p>
+</div>
+
+<h3>Why start from bytes?</h3>
+<p>Computers store all text as bytes, which are numbers from 0 to 255. UTF-8 decides which bytes each character becomes:</p>
+<div class="scroll">
+<table>
+  <tr><th>Character</th><th>Its bytes</th><th>As tokens</th></tr>
+  <tr><td>O</td><td class="num">79</td><td><div class="tokens" data-t='[["O",79]]'></div></td></tr>
+  <tr><td>n</td><td class="num">110</td><td><div class="tokens" data-t='[["n",110]]'></div></td></tr>
+  <tr><td>a space</td><td class="num">32</td><td><div class="tokens" data-t='[["␣",32]]'></div></td></tr>
+  <tr><td>a line break</td><td class="num">10</td><td><div class="tokens" data-t='[["↵",10]]'></div></td></tr>
+  <tr><td>é</td><td class="num">195, 169</td><td><div class="tokens" data-t='[["\\xc3",195],["\\xa9",169]]'></div></td></tr>
+</table>
+</div>
+<p>So the first 12 characters of the stories, <span class="mono">"Once upon a "</span>, start out as 12 tokens:</p>
+<div class="tokens" data-t='[["O",79],["n",110],["c",99],["e",101],["␣",32],["u",117],["p",112],["o",111],["n",110],["␣",32],["a",97],["␣",32]]'></div>
+
+<div class="note">
+<p><b>Nothing can ever be unknown.</b> Every possible text, in any language and with any emoji, is made of these 256 bytes. A word-based tokenizer gets stuck on a word it has never seen. This one can always fall back to spelling something out byte by byte.</p>
+</div>
+
+<h3>What the dictionary looks like at the start</h3>
+<p>The ID and the byte value are the same number, so each entry simply points to itself:</p>
+<div class="scroll">
+<table>
+  <tr><th>ID</th><th>Stands for</th></tr>
+  <tr><td class="num">0 … 31</td><td>invisible control bytes (10 is a line break)</td></tr>
+  <tr><td class="num">32</td><td>a space</td></tr>
+  <tr><td class="num">65 … 90</td><td>A to Z</td></tr>
+  <tr><td class="num">97 … 122</td><td>a to z</td></tr>
+  <tr><td class="num">128 … 255</td><td>pieces of multi-byte characters like é</td></tr>
+  <tr><td class="num">256 +</td><td style="color:var(--muted)">empty for now. Training fills these in.</td></tr>
+</table>
+</div>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="count_pairs">
+<div class="eyebrow">Function 3 of 7</div>
+<h2><span class="mono">count_pairs</span></h2>
+<p class="lede">Find out which two tokens sit next to each other most often. This is the "eyes" of BPE: it decides what is worth gluing together.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A list of token IDs</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>A tally: every neighbouring pair, and how many times it appears</p></div>
+</div>
+
+<h3>The goal</h3>
+<p>To pick the next merge, BPE needs to know which pair is the most common. <span class="mono">count_pairs</span> slides a two-wide window along the list, one step at a time, and keeps a running count of each pair it sees.</p>
+
+<h3>A small example</h3>
+<p>Input: <span class="mono">[1, 2, 3, 1, 2]</span>. The window looks at each neighbouring pair in turn:</p>
+<div class="scroll">
+<table>
+  <tr><th>Window</th><th>Pair</th><th>Tally so far</th></tr>
+  <tr><td><span class="mono"><b>[1, 2]</b>, 3, 1, 2</span></td><td class="mono">(1, 2)</td><td class="mono">(1,2): 1</td></tr>
+  <tr><td><span class="mono">1, <b>[2, 3]</b>, 1, 2</span></td><td class="mono">(2, 3)</td><td class="mono">(1,2): 1 · (2,3): 1</td></tr>
+  <tr><td><span class="mono">1, 2, <b>[3, 1]</b>, 2</span></td><td class="mono">(3, 1)</td><td class="mono">(1,2): 1 · (2,3): 1 · (3,1): 1</td></tr>
+  <tr><td><span class="mono">1, 2, 3, <b>[1, 2]</b></span></td><td class="mono">(1, 2)</td><td class="mono"><b>(1,2): 2</b> · (2,3): 1 · (3,1): 1</td></tr>
+</table>
+</div>
+<p>Output: <b>(1, 2) appears twice</b>, and the other pairs once each. A list of 5 IDs always has 4 neighbouring pairs.</p>
+
+<h3>On real text</h3>
+<p>The opening of the stories, <span class="mono">"Once "</span>, as bytes:</p>
+<div class="tokens" data-t='[["O",79],["n",110],["c",99],["e",101],["␣",32]]'></div>
+<p>gives four pairs: <span class="mono">O+n</span>, <span class="mono">n+c</span>, <span class="mono">c+e</span>, and <span class="mono">e+␣</span>. Do the same across all 100,048 training bytes and you get <b>702 different pairs</b>. These are the top six:</p>
+<div class="scroll">
+<table>
+  <tr><th>Pair</th><th style="text-align:right">Count</th><th>Why it's common</th></tr>
+  <tr><td><div class="tokens" data-t='[["e",101],["␣",32]]'></div></td><td class="num">3,542</td><td>lots of words end in e: the, he, she, little, time</td></tr>
+  <tr><td><div class="tokens" data-t='[["␣",32],["t",116]]'></div></td><td class="num">2,906</td><td>words starting with t: the, to, they, then</td></tr>
+  <tr><td><div class="tokens" data-t='[["h",104],["e",101]]'></div></td><td class="num">2,896</td><td>the, he, she, they, her</td></tr>
+  <tr><td><div class="tokens" data-t='[["d",100],["␣",32]]'></div></td><td class="num">2,616</td><td>and, played, said, wanted</td></tr>
+  <tr><td><div class="tokens" data-t='[["␣",32],["a",97]]'></div></td><td class="num">2,167</td><td>a, and, at, asked</td></tr>
+  <tr><td><div class="tokens" data-t='[["t",116],["h",104]]'></div></td><td class="num">2,014</td><td>the, that, there, they</td></tr>
+</table>
+</div>
+<p>Notice that BPE never knew English. It found "the" hiding in these counts purely from statistics.</p>
+
+<div class="note">
+<p><b>It only counts. It doesn't change anything.</b> The list going in is left untouched. Deciding which pair wins and rewriting the list are jobs for <a href="#tok_train">tok_train</a> and <a href="#merge">merge</a>.</p>
+</div>
+
+<h4>One subtlety: overlapping pairs</h4>
+<p>In <span class="mono">[1, 1, 1]</span>, the window sees (1, 1) at positions 1–2 and again at 2–3, so it counts <b>2</b>. But you can only glue one of them, since the middle 1 can't belong to both. The count is a good estimate of how useful a merge will be, not an exact one.</p>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="merge">
+<div class="eyebrow">Function 4 of 7</div>
+<h2><span class="mono">merge</span></h2>
+<p class="lede">Glue one specific pair together everywhere it appears. This is the "hands" of BPE: <a href="#count_pairs">count_pairs</a> decides what to glue, and <span class="mono">merge</span> does the gluing.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A list of IDs, the pair to glue (two IDs), and the new ID to replace it with</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>A new, <b>shorter</b> list in which every occurrence of the pair is now that single new ID</p></div>
+</div>
+
+<h3>The goal</h3>
+<p>Rewrite the list so that a two-token pattern becomes one token. Every replacement turns two IDs into one, so the list gets one item shorter each time.</p>
+
+<h3>How it works: scan left to right</h3>
+<p><span class="mono">merge([1, 2, 3, 1, 2], pair (1, 2), new ID 99)</span></p>
+<ol class="steps">
+  <li>Look at <b>1</b>. Is it followed by <b>2</b>? Yes, so write <b>99</b> and skip past both.</li>
+  <li>Look at <b>3</b>. Is it followed by 2? No, so copy <b>3</b> as it is.</li>
+  <li>Look at <b>1</b>. Followed by <b>2</b>? Yes, so write <b>99</b> and skip both.</li>
+</ol>
+<div class="tokens" data-t='[["1"],["2"],["3"],["1"],["2"]]'></div>
+<div style="color:var(--accent);font-size:1.2rem;margin:-2px 0 -2px 6px">↓</div>
+<div class="tokens" data-t='[["99","","n"],["3"],["99","","n"]]'></div>
+<p>Five items have become three.</p>
+
+<h4>No overlaps</h4>
+<p>Because it skips past both items after a match, a token can only be used once:</p>
+<p class="mono">merge([1, 1, 1], (1, 1), 7) → [7, 1]</p>
+<p>The first two 1s become 7. The third 1 has no partner left, so it stays.</p>
+
+<h3>On real text: the very first merge</h3>
+<p>The most common pair in the training text was <span class="mono">e + ␣</span>, so it becomes token 256. Here's what that does to <span class="mono">"the cat"</span>:</p>
+<div class="tokens" data-t='[["t",116],["h",104],["e",101,"hl"],["␣",32,"hl"],["c",99],["a",97],["t",116]]'></div>
+<div style="color:var(--accent);font-size:1.2rem;margin:-2px 0 -2px 6px">↓</div>
+<div class="tokens" data-t='[["t",116],["h",104],["e␣",256,"n"],["c",99],["a",97],["t",116]]'></div>
+<p>Across the whole training text, this one merge happens 3,542 times, so the list shrinks from <b>100,048</b> to <b>96,506</b> tokens.</p>
+
+<h3>A side effect: the neighbours change</h3>
+<p>Gluing one pair changes the counts of the pairs around it. Before the first merge, <span class="mono">␣ + t</span> was the second most common pair at 2,906. Look at <span class="mono">"the tree"</span>:</p>
+<div class="io">
+  <div class="box"><div class="label">Before</div><div class="tokens" data-t='[["h",104],["e",101],["␣",32,"hl"],["t",116,"hl"],["r",114]]'></div><p style="font-size:.85rem;color:var(--muted)">contains the pair ␣ + t</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">After</div><div class="tokens" data-t='[["h",104],["e␣",256,"m"],["t",116],["r",114]]'></div><p style="font-size:.85rem;color:var(--muted)">the space now belongs to e␣, so ␣ + t is gone</p></div>
+</div>
+<p>Every time "e␣" swallowed a space that came right before a t, one <span class="mono">␣ + t</span> disappeared. Its count drops to 2,516, which is below <span class="mono">d + ␣</span> at 2,616. That's why the second merge is <b>d␣</b> and not ␣t. This is why <a href="#tok_train">tok_train</a> recounts after every merge instead of counting once up front.</p>
+
+<div class="note">
+<p><b><span class="mono">merge</span> only rewrites the list.</b> It doesn't record anything about what the new ID means. Writing the rule in the rulebook and the new entry in the dictionary is <a href="#tok_train">tok_train</a>'s job. That makes <span class="mono">merge</span> reusable: <a href="#tok_encode">tok_encode</a> calls the same function to replay old rules on new text.</p>
+</div>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="tok_train">
+<div class="eyebrow">Function 5 of 7</div>
+<h2><span class="mono">tok_train</span></h2>
+<p class="lede">The learning loop. Count, pick the winner, glue it, write it down, and repeat until the vocabulary reaches the target size.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A blank tokenizer, some training text (100,000 characters), and a target size (512)</p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>The same tokenizer, now filled with <b>256 merge rules</b> and <b>512 dictionary entries</b></p></div>
+</div>
+
+<h3>The goal</h3>
+<p>Discover the most useful chunks of text, the ones that will shorten the stories the most, and record how to build each one. This is the only part of BPE that <em>learns</em>. Everything afterwards just follows the rules it writes down.</p>
+
+<h3>One round of the loop</h3>
+<ol class="steps">
+  <li><b>Turn the text into bytes</b> (only once, before the first round): 100,000 characters become 100,048 IDs.</li>
+  <li><b>Count</b> every neighbouring pair with <a href="#count_pairs">count_pairs</a>.</li>
+  <li><b>Pick</b> the pair with the highest count.</li>
+  <li><b>Give it the next free ID</b>, which equals the current size of the dictionary: 256 the first time, then 257, and so on.</li>
+  <li><b>Glue</b> that pair everywhere with <a href="#merge">merge</a>.</li>
+  <li><b>Write it down in two places:</b> the rule "(e, ␣) → 256" goes in the rulebook, and "256 means the bytes of e followed by the bytes of ␣" goes in the dictionary.</li>
+  <li><b>Is the dictionary at 512 yet?</b> If not, go back to step 2. 512 − 256 = <b>256 rounds</b> in total.</li>
+</ol>
+
+<h3>Watching the vocabulary grow</h3>
+<p>The first merges on the stories, in order. Green tokens are built from an earlier merge:</p>
+<div class="scroll">
+<table>
+  <tr><th>Round</th><th>Glue</th><th>New token</th></tr>
+  <tr><td class="num">1</td><td><div class="tokens" data-t='[["e",101],["␣",32]]'></div></td><td><div class="tokens" data-t='[["e␣",256,"n"]]'></div></td></tr>
+  <tr><td class="num">2</td><td><div class="tokens" data-t='[["d",100],["␣",32]]'></div></td><td><div class="tokens" data-t='[["d␣",257,"n"]]'></div></td></tr>
+  <tr><td class="num">3</td><td><div class="tokens" data-t='[["t",116],["h",104]]'></div></td><td><div class="tokens" data-t='[["th",258,"n"]]'></div></td></tr>
+  <tr><td class="num">4</td><td><div class="tokens" data-t='[["␣",32],["a",97]]'></div></td><td><div class="tokens" data-t='[["␣a",259,"n"]]'></div></td></tr>
+  <tr><td class="num">5</td><td><div class="tokens" data-t='[[".",46],["␣",32]]'></div></td><td><div class="tokens" data-t='[[".␣",260,"n"]]'></div></td></tr>
+  <tr><td class="num">10</td><td><div class="tokens" data-t='[["n",110],["d␣",257,"m"]]'></div></td><td><div class="tokens" data-t='[["nd␣",265,"n"]]'></div></td></tr>
+  <tr><td class="num">12</td><td><div class="tokens" data-t='[["e",101],["d␣",257,"m"]]'></div></td><td><div class="tokens" data-t='[["ed␣",267,"n"]]'></div></td></tr>
+  <tr><td class="num">13</td><td><div class="tokens" data-t='[["th",258,"m"],["e␣",256,"m"]]'></div></td><td><div class="tokens" data-t='[["the␣",268,"n"]]'></div></td></tr>
+  <tr><td class="num">19</td><td><div class="tokens" data-t='[["␣a",259,"m"],["nd␣",265,"m"]]'></div></td><td><div class="tokens" data-t='[["␣and␣",274,"n"]]'></div></td></tr>
+  <tr><td class="num">25</td><td><div class="tokens" data-t='[[".␣",260,"m"],["T",84]]'></div></td><td><div class="tokens" data-t='[[".␣T",280,"n"]]'></div></td></tr>
+</table>
+</div>
+<p>By the last rounds, the counts are lower and the tokens are whole words and phrases from the stories:</p>
+<div class="tokens" data-t='[["saw␣a␣",504,"m"],[".␣A",505,"m"],["One␣day,␣",506,"m"],["girl␣",509,"m"],["lik",511,"m"]]'></div>
+
+<h3>What changes, round by round</h3>
+<div class="scroll">
+<table>
+  <tr><th></th><th style="text-align:right">Start</th><th style="text-align:right">After round 1</th><th style="text-align:right">After round 256</th></tr>
+  <tr><td>Dictionary size</td><td class="num">256</td><td class="num">257</td><td class="num">512</td></tr>
+  <tr><td>Rules in the rulebook</td><td class="num">0</td><td class="num">1</td><td class="num">256</td></tr>
+  <tr><td>Length of the training text</td><td class="num">100,048</td><td class="num">96,506</td><td class="num">41,024</td></tr>
+</table>
+</div>
+
+<div class="note">
+<p><b>The order of the rules matters.</b> Rule 13 (th + e␣ → the␣) only makes sense once rules 1 and 3 have already created <span class="mono">e␣</span> and <span class="mono">th</span>. The rulebook keeps the rules in the order they were learned, so <a href="#tok_encode">tok_encode</a> can replay them in that same order.</p>
+</div>
+
+<h4>Two details</h4>
+<ul>
+  <li><b>It can stop early.</b> If the text ever shrinks to a single token, there are no pairs left to count and the loop ends. With 100,000 characters of stories, that never happens.</li>
+  <li><b>The size is a choice.</b> 512 is small so the model trains quickly. The full-size model in the book uses 4,096. A bigger vocabulary gives shorter sequences, but each token appears less often and is harder to learn.</li>
+</ul>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="tok_encode">
+<div class="eyebrow">Function 6 of 7</div>
+<h2><span class="mono">tok_encode</span></h2>
+<p class="lede">Use what was learned. Take any text, break it into bytes, then replay every rule in the rulebook, in order, to rebuild the learned chunks.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A trained tokenizer and any text, such as <span class="mono">"the cat"</span></p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>A list of token IDs, such as <span class="mono">[268, 99, 388]</span></p></div>
+</div>
+
+<h3>The goal</h3>
+<p>Turn text into the numbers the model reads, and do it the <em>same way every time</em>, so that "the␣" is always token 268 whether it shows up in training, in a prompt you type, or in a story the model has never seen.</p>
+
+<h3>How it transforms the input</h3>
+<p>It starts from bytes and runs through all 256 rules from first to last. Most rules don't match anything in a short text, so nothing happens. Here are the only four that change <span class="mono">"the cat"</span>:</p>
+
+<div class="card">
+  <p style="margin-bottom:.3em"><b>Start</b>: 7 bytes</p>
+  <div class="tokens" data-t='[["t",116],["h",104],["e",101],["␣",32],["c",99],["a",97],["t",116]]'></div>
+
+  <p style="margin:1em 0 .3em"><b>Rule 1</b>: e + ␣ → 256</p>
+  <div class="tokens" data-t='[["t",116],["h",104],["e␣",256,"n"],["c",99],["a",97],["t",116]]'></div>
+
+  <p style="margin:1em 0 .3em"><b>Rule 3</b>: t + h → 258</p>
+  <div class="tokens" data-t='[["th",258,"n"],["e␣",256,"m"],["c",99],["a",97],["t",116]]'></div>
+
+  <p style="margin:1em 0 .3em"><b>Rule 13</b>: th + e␣ → 268</p>
+  <div class="tokens" data-t='[["the␣",268,"n"],["c",99],["a",97],["t",116]]'></div>
+
+  <p style="margin:1em 0 .3em"><b>Rule 133</b>: a + t → 388</p>
+  <div class="tokens" data-t='[["the␣",268,"m"],["c",99],["at",388,"n"]]'></div>
+
+  <p style="margin:1em 0 0"><b>Result</b>: <span class="mono">[268, 99, 388]</span>, three tokens instead of seven. "c" never paired with anything common enough, so it stays a single byte.</p>
+</div>
+
+<h3>More examples from the trained tokenizer</h3>
+<div class="scroll">
+<table>
+  <tr><th>Text</th><th>Tokens</th><th>What to notice</th></tr>
+  <tr><td>Once upon a time</td><td><div class="tokens" data-t='[["Once␣upon␣a␣tim",453,"m"],["e",101]]'></div></td><td>Every story starts this way, so the phrase became one token. The final "e" is left over because rule 1 already glued "e" to the space after it, so training built the chunk from "tim". Add a space ("Once upon a time ") and you get [453, 256]: "Once upon a tim" + "e␣".</td></tr>
+  <tr><td>Tom lost his red ball.</td><td><div class="tokens" data-t='[["Tom␣",469,"m"],["lo",305,"m"],["s",115],["t␣",261,"m"],["his␣",423,"m"],["r",114],["ed␣",267,"m"],["ba",364,"m"],["ll",291,"m"],[".",46]]'></div></td><td>Common words are whole tokens. Rarer ones like "lost" and "ball" are spelled from pieces.</td></tr>
+  <tr><td>hi</td><td><div class="tokens" data-t='[["h",104],["i",105]]'></div></td><td>No rule covers "hi", so it stays as plain bytes.</td></tr>
+  <tr><td>é</td><td><div class="tokens" data-t='[["\\xc3",195],["\\xa9",169]]'></div></td><td>Never seen in training, but it still encodes fine as its two raw bytes.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<p><b>Why replay in order?</b> Later rules are made from earlier ones. Rule 13 looks for the pair (258, 256). If you ran it before rules 1 and 3, those IDs wouldn't exist in the list yet and it would find nothing. Replaying in the order learned rebuilds the chunks the same way training built them.</p>
+</div>
+
+<h3>Where its output goes</h3>
+<p>The whole million-character book goes through <span class="mono">tok_encode</span>, and the resulting list of IDs is all the model ever sees. 90% of it is used for learning and 10% is held back for testing. Your prompts go through the same function when the model writes a story.</p>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+<section class="fn" id="tok_decode">
+<div class="eyebrow">Function 7 of 7</div>
+<h2><span class="mono">tok_decode</span></h2>
+<p class="lede">The way back. Turn a list of token IDs into readable text by looking up what each ID stands for and joining the pieces.</p>
+
+<div class="io">
+  <div class="box"><div class="label">Goes in</div><p>A trained tokenizer and a list of IDs, such as <span class="mono">[268, 99, 388]</span></p></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Comes out</div><p>Text: <span class="mono">"the cat"</span></p></div>
+</div>
+
+<h3>The goal</h3>
+<p>The model thinks in IDs and writes in IDs. <span class="mono">tok_decode</span> turns its output back into words a person can read.</p>
+
+<h3>How it transforms the input</h3>
+<p>It takes two simple steps and doesn't use the rulebook at all, only the dictionary:</p>
+<ol class="steps">
+  <li><b>Look up each ID's bytes</b> and join them end to end.</li>
+  <li><b>Read those bytes as UTF-8 text.</b></li>
+</ol>
+
+<div class="card">
+  <p style="margin-bottom:.3em"><b>IDs</b></p>
+  <div class="tokens" data-t='[["268"],["99"],["388"]]'></div>
+  <p style="margin:1em 0 .3em"><b>Look up each one in the dictionary</b></p>
+  <div class="tokens" data-t='[["the␣",268,"m"],["c",99],["at",388,"m"]]'></div>
+  <p style="margin:1em 0 .3em"><b>Join the bytes</b></p>
+  <div class="tokens" data-t='[["t",116],["h",104],["e",101],["␣",32],["c",99],["a",97],["t",116]]'></div>
+  <p style="margin:1em 0 0"><b>Read as text</b>: <span class="mono">"the cat"</span></p>
+</div>
+
+<h3>Why decoding is easy and encoding is not</h3>
+<p>The dictionary already stores the full bytes for every token. Training wrote "the␣" as its complete bytes, not as "th + e␣". So decoding is a straight lookup with no replaying and no ordering. <a href="#tok_encode">Encoding</a> has to work out which chunks to build, so it needs the whole rulebook.</p>
+
+<div class="note">
+<p><b>A round trip always gets you back where you started.</b> Encode any text, decode the result, and you get the exact same text, including capitals, punctuation, spaces, and line breaks. Nothing is lost, because every token is just a shorthand for specific bytes.</p>
+</div>
+
+<h3>One safety net: broken characters</h3>
+<p>Some characters take more than one byte. For example, "é" is the bytes 195 then 169. When the model generates text one token at a time, it could produce a 195 without the 169 that should follow it. Those bytes aren't valid text on their own.</p>
+<div class="io">
+  <div class="box"><div class="label">Model outputs</div><div class="tokens" data-t='[["h",104],["\\xc3",195]]'></div></div>
+  <div class="arrow">→</div>
+  <div class="box"><div class="label">Decoded</div><p class="mono" style="font-size:1rem">"h�"</p></div>
+</div>
+<p>Instead of crashing, <span class="mono">tok_decode</span> swaps any broken piece for the replacement mark <b>�</b> and keeps going.</p>
+
+<h3>Where it's used</h3>
+<p>At the very end of the GPT (step 21). The model looks at the IDs so far, picks the next ID, adds it to the list, and repeats. When it's done, <span class="mono">tok_decode</span> turns the whole list into a story you can read.</p>
+
+<div class="card">
+  <h4 style="margin-top:0">The full cycle</h4>
+  <p style="margin:0">text → <a href="#tok_encode">tok_encode</a> → IDs → <b>the model</b> → more IDs → <b>tok_decode</b> → text</p>
+</div>
+<p class="back"><a href="#top">↑ Back to top</a></p>
+</section>
+
+</div>
+<script>
+// Turns <div class="tokens" data-t='[["t",116],["e␣",256,"m"]]'> into token chips.
+// Each entry: [text shown, id number, optional class: "m" merged, "n" newly made, "hl" highlighted].
+function chip(text, id, cls) {
+  const el = document.createElement("span");
+  el.className = "tok" + (cls ? " " + cls : "");
+  const tx = document.createElement("span");
+  el.appendChild(tx);
+  for (const part of String(text).split(/(␣|↵)/)) {
+    if (part === "␣" || part === "↵") {
+      const s = document.createElement("span");
+      s.className = "sp";
+      s.textContent = part;
+      tx.appendChild(s);
+    } else if (part) {
+      tx.appendChild(document.createTextNode(part));
+    }
+  }
+  if (id !== undefined && id !== null && id !== "") {
+    const small = document.createElement("small");
+    small.textContent = id;
+    el.appendChild(small);
+  }
+  return el;
+}
+
+document.querySelectorAll(".tokens[data-t]").forEach((row) => {
+  for (const [text, id, cls] of JSON.parse(row.dataset.t)) row.appendChild(chip(text, id, cls));
+});
+
+</script>
+<script>
+(() => {
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const $ = (id) => document.getElementById(id);
+  let ids, vocab, rules;
+
+  const show = (id) => dec.decode(vocab[id]).replace(/ /g, "␣").replace(/\n/g, "↵");
+
+  function reset() {
+    ids = Array.from(enc.encode($("demo-in").value));
+    vocab = {};
+    for (let i = 0; i < 256; i++) vocab[i] = new Uint8Array([i]);
+    rules = [];
+    render(null);
+  }
+
+  function countPairs() {
+    const counts = new Map();
+    for (let i = 0; i + 1 < ids.length; i++) {
+      const k = ids[i] + "," + ids[i + 1];
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function step() {
+    const top = countPairs()[0];
+    if (!top || top[1] < 2) return false;
+    const [a, b] = top[0].split(",").map(Number);
+    const newId = 256 + rules.length;
+    const out = [];
+    for (let i = 0; i < ids.length; ) {
+      if (i + 1 < ids.length && ids[i] === a && ids[i + 1] === b) { out.push(newId); i += 2; }
+      else { out.push(ids[i]); i += 1; }
+    }
+    ids = out;
+    const joined = new Uint8Array(vocab[a].length + vocab[b].length);
+    joined.set(vocab[a]); joined.set(vocab[b], vocab[a].length);
+    vocab[newId] = joined;
+    rules.push([a, b, newId, top[1]]);
+    render(newId);
+    return true;
+  }
+
+  function render(fresh) {
+    const row = $("demo-toks");
+    row.textContent = "";
+    for (const id of ids) row.appendChild(chip(show(id), id, id === fresh ? "n" : id >= 256 ? "m" : ""));
+    $("demo-len").textContent = ids.length + " tokens";
+
+    const pairs = countPairs().slice(0, 5);
+    const best = pairs[0];
+    const done = !best || best[1] < 2;
+    $("demo-step").disabled = $("demo-all").disabled = done;
+    const box = $("demo-pairs");
+    box.textContent = "";
+    if (done) {
+      box.innerHTML = "<p style='color:var(--muted)'>Every pair now appears only once, so this sentence has nothing left to teach. Real training on 100,000 characters keeps going until it reaches 512 tokens.</p>";
+    } else {
+      for (const [k, n] of pairs) {
+        const [a, b] = k.split(",").map(Number);
+        const line = document.createElement("div");
+        line.className = "tokens";
+        line.style.alignItems = "center";
+        line.append(chip(show(a), a, a >= 256 ? "m" : ""), " + ", chip(show(b), b, b >= 256 ? "m" : ""));
+        const c = document.createElement("span");
+        c.className = "mono";
+        c.style.color = "var(--muted)";
+        c.textContent = " × " + n + (k === best[0] ? "  ← next to merge" : "");
+        line.append(c);
+        box.appendChild(line);
+      }
+    }
+
+    const r = $("demo-rules");
+    r.textContent = "";
+    if (!rules.length) { r.textContent = "No merges yet. Every token is a single byte."; return; }
+    rules.forEach(([a, b, n, cnt], i) => {
+      const line = document.createElement("div");
+      line.className = "tokens";
+      line.style.alignItems = "center";
+      line.append((i + 1) + ". ", chip(show(a), a), " + ", chip(show(b), b), " → ", chip(show(n), n, "m"));
+      const c = document.createElement("span");
+      c.className = "mono"; c.textContent = " (seen " + cnt + "×)";
+      line.append(c);
+      r.appendChild(line);
+    });
+  }
+
+  $("demo-step").onclick = step;
+  $("demo-all").onclick = () => { while (step()); };
+  $("demo-reset").onclick = reset;
+  $("demo-in").oninput = reset;
+  reset();
+})();
+</script>
+</body>
+</html>

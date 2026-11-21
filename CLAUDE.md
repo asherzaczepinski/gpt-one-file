@@ -1,0 +1,5 @@
+Before doing anything in this project, read `for-claude/README.md`. It has the goal, who edits which file,
+and where Asher is in the build.
+
+Short version: **never edit `main.py`** (Asher writes it by hand). `main2.py` is the commented step-by-step build
+(put the next step there). `main3.py` is the complete, commented program that trains.

@@ -1,0 +1,574 @@
+# [1] ═══════════════════════ STEP 1 · TEXT ═══════════════════════
+# gpt.py: a whole GPT in one file, plain Python and NumPy, no classes: just functions and dicts of numbers.
+#
+# The file is built strictly top to bottom, in the same order as the website (numpy-gpt-explained.vercel.app):
+# steps 1-21 are one trip through the model (the forward pass), steps L1-L8 are how it learns. Each step only
+# ADDS code at the end; nothing earlier is ever changed. So a piece is written as its own small function at the
+# step that explains it, and the bigger functions (attention, block, forward, backward) are put together from
+# those pieces once all of them exist. A comment like  # [5]  marks where each step starts. Every line has a
+# comment saying what it does. (Imports appear at the step that first needs them, on purpose.)
+#
+# The model is a dict:  model = {"p": {name: array}, "n_heads": 4, "n_layers": 4, "max_T": 64}
+# p holds every learned number, e.g. p["tok"] is the token table and p["b0.qkv.W"] is block 0's Q/K/V matrix.
+import os  # file paths
+
+HERE = os.path.dirname(os.path.abspath(__file__))  # the folder this file is in
+TEXT_FILE = os.path.join(HERE, "stories.txt")  # 1,254 short children's stories, about 1 MB
+
+
+def read_text(path):  # the whole file as one string
+    with open(path, encoding="utf-8") as f:  # open it as text
+        return f.read()  # about a million characters
+
+
+# [2] ═══════════════════════ STEP 2 · SPLIT INTO TOKENS ═══════════════════════
+# Cut the text into pieces (tokens) that show up often, and give each one an id number, like a locker number.
+# Byte-pair encoding: start from the 256 possible bytes (so any text can be encoded), then keep merging the
+# most common neighbouring pair into a new token. The tokenizer is a dict: {"merges": {...}, "vocab": {...}}.
+import numpy as np  # arrays: from here on it holds the token ids, and from step 3 on it does all the math  # noqa: E402
+
+VOCAB = 512  # how many tokens the vocabulary ends up with (the book's model: 4096)
+TOK_CHARS = 100_000  # how much text the tokenizer learns its merges from
+
+
+def count_pairs(ids):  # e.g. [1, 2, 3, 1, 2] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
+    counts = {}  # pair -> how many times it appears
+    for a, b in zip(ids, ids[1:]):  # every neighbouring pair (this id, the next id)
+        counts[(a, b)] = counts.get((a, b), 0) + 1  # the old count (0 if new) plus 1
+    return counts  # the finished counts
+
+
+def merge(ids, pair, new_id):  # e.g. merge([1, 2, 3, 1, 2], (1, 2), 99) -> [99, 3, 99]
+    out = []  # the new list
+    i = 0  # where we are in ids
+    while i < len(ids):  # scan left to right
+        if i + 1 < len(ids) and (ids[i], ids[i + 1]) == pair:  # there IS a next id and the two make the pair
+            out.append(new_id)  # write the merged token
+            i += 2  # skip both
+        else:  # not the pair
+            out.append(ids[i])  # copy this id as it is
+            i += 1  # move on by one
+    return out  # never overlaps: merge([1, 1, 1], (1, 1), 7) == [7, 1]
+
+
+def new_tokenizer():  # a tokenizer that only knows the 256 single bytes
+    return {"merges": {}, "vocab": {i: bytes([i]) for i in range(256)}}  # merges: (a, b) -> new id; vocab: id -> its bytes
+
+
+def tok_train(tok, text, vocab_size):  # learn merges until there are vocab_size tokens
+    ids = list(text.encode("utf-8"))  # the text as a list of byte values 0-255
+    while len(tok["vocab"]) < vocab_size:  # until the vocabulary is big enough
+        counts = count_pairs(ids)  # count every neighbouring pair
+        if not counts:  # nothing left to merge
+            break  # stop early
+        pair = max(counts, key=counts.get)  # the most common pair
+        new_id = len(tok["vocab"])  # the next free id
+        ids = merge(ids, pair, new_id)  # replace that pair everywhere
+        tok["merges"][pair] = new_id  # remember the merge (dicts keep the order they were learned in)
+        tok["vocab"][new_id] = tok["vocab"][pair[0]] + tok["vocab"][pair[1]]  # its bytes: the two pieces joined
+
+
+def tok_encode(tok, text):  # e.g. "the cat" -> [259, 99, 256] after some training
+    ids = list(text.encode("utf-8"))  # start from bytes
+    for pair, new_id in tok["merges"].items():  # replay every merge, in the order it was learned
+        ids = merge(ids, pair, new_id)  # later merges are built out of earlier ones
+    return ids  # the token ids
+
+
+# [3] ═══════════════════════ STEP 3 · POSITION + VECTOR EMBEDDING ═══════════════════════
+# Swap each id for a learned list of numbers that describes the token (its meaning), and add another list that
+# says where it sits (its position). Now every token is a vector. Every piece of the model comes with a small
+# init_ function that makes its learned arrays; init_model (step 19) calls them all.
+
+def init_embed(rng, vocab, d, max_T):  # the two tables, filled with small random numbers
+    return {"tok": rng.normal(0, 0.02, (vocab, d)),  # token table: one row of d numbers per token (its meaning)
+            "pos": rng.normal(0, 0.02, (max_T, d))}  # position table: one row per position (where it sits)
+
+
+def embed(p, ids):  # ids (B, T) -> vectors (B, T, d)
+    return p["tok"][ids] + p["pos"][:ids.shape[1]]  # each id's row of the token table, plus its position's row
+
+
+# [4] ═══════════════════════ STEP 4 · NORMALIZE (LayerNorm) ═══════════════════════
+# Put each token's numbers on a steady scale (average 0, spread 1), then a learned scale g and shift b.
+
+def init_layernorm(d):  # a LayerNorm's two arrays
+    return np.ones(d), np.zeros(d)  # scale g starts at 1 (no stretching), shift b at 0
+
+
+def layernorm(x, g, b, eps=1e-5):  # e.g. [1, 2, 3, 4] -> [-1.342, -0.447, 0.447, 1.342]
+    mean = x.mean(axis=-1, keepdims=True)  # each token's average (keepdims so it subtracts token by token)
+    var = x.var(axis=-1, keepdims=True)  # each token's variance (spread squared)
+    inv = 1 / np.sqrt(var + eps)  # 1 / spread (eps so we never divide by 0)
+    xhat = (x - mean) * inv  # now average 0, spread 1
+    return xhat * g + b, (xhat, inv, g)  # scaled and shifted, plus what backward will need
+
+
+# [5] ═══════════════════════ STEP 5 · SEARCH [Q] · MATCH [K] · VALUE [V] ═══════════════════════
+# Each token makes three new vectors: a query (what am I looking for?), a key (what do I have to offer?) and a
+# value (what I hand over if I'm picked). All three come from one matrix multiply, y = x @ W + b, and are cut
+# into heads so several questions get asked at once.
+
+def init_linear(rng, n_in, n_out):  # a matrix and its bias
+    return rng.normal(0, 0.02, (n_in, n_out)), np.zeros(n_out)  # small random weights (so units differ), bias 0
+
+
+def linear(x, W, b):  # x (..., n_in) -> (..., n_out)
+    return x @ W + b, (x, W)  # matrix multiply plus bias; keep x and W for backward
+
+
+def qkv_heads(model, i, x):  # block i: x (B, T, d) -> q, k, v, each (B, H, T, hs)
+    p = model["p"]  # the learned arrays
+    Bn, Tn, d = x.shape  # batch size, tokens, width
+    H = model["n_heads"]  # number of heads, e.g. 4
+    hs = d // H  # numbers per head, e.g. 128 / 4 = 32
+    qkv, c_qkv = linear(x, p[f"b{i}.qkv.W"], p[f"b{i}.qkv.b"])  # (B, T, 3d): every token's q, k and v at once
+    q, k, v = np.split(qkv, 3, axis=-1)  # cut into three (B, T, d) arrays
+    q = q.reshape(Bn, Tn, H, hs).transpose(0, 2, 1, 3)  # split into heads: (B, T, H, hs) -> (B, H, T, hs)
+    k = k.reshape(Bn, Tn, H, hs).transpose(0, 2, 1, 3)  # the same for the keys
+    v = v.reshape(Bn, Tn, H, hs).transpose(0, 2, 1, 3)  # the same for the values
+    return q, k, v, c_qkv  # the three, plus the Linear's cache
+
+
+# [6] ═══════════════════════ STEP 6 · Q vs. K DOT PRODUCT ═══════════════════════
+# Score every token's query against every token's key: a big score means that token looks relevant.
+
+def attention_scores(q, k):  # q, k (B, H, T, hs) -> scores (B, H, T, T)
+    hs = q.shape[-1]  # numbers per head
+    return q @ k.transpose(0, 1, 3, 2) / np.sqrt(hs)  # query i · key j, scaled down by sqrt(hs) so softmax isn't too peaky
+
+
+# [7] ═══════════════════════ STEP 7 · HIDE FUTURE WORDS ═══════════════════════
+# A token may only use the words before it, which is what makes the model a next-word predictor.
+
+def hide_future(scores):  # (B, H, T, T) -> the same, with every later token blocked
+    Tn = scores.shape[-1]  # how many tokens
+    future = np.triu(np.ones((Tn, Tn), dtype=bool), k=1)  # True above the diagonal: the later tokens
+    return np.where(future, -1e9, scores)  # -1e9 there, so their weight becomes e^-1e9 = 0
+
+
+# [8] ═══════════════════════ STEP 8 · SOFTMAX → WEIGHTS ═══════════════════════
+# Turn each row of scores into weights that are all positive and add up to 1: how much to listen to each token.
+
+def softmax(x):  # e.g. [2.0, 1.0, 0.1] -> [0.659, 0.242, 0.099]
+    e = np.exp(x - x.max(axis=-1, keepdims=True))  # e^(score - row max): same answer, but can't overflow
+    return e / e.sum(axis=-1, keepdims=True)  # divide by the row total, so each row adds up to 1
+
+
+# [9] ═══════════════════════ STEP 9 · SCALE EACH VALUE BY ITS WEIGHT ═══════════════════════
+# Multiply each earlier token's value vector by how much weight it got: important ones stay strong.
+
+def weigh_values(w, v):  # weights (B, H, T, T), values (B, H, T, hs) -> (B, H, T, hs)
+    return w @ v  # row i = weights[i, 0] * v[0] + weights[i, 1] * v[1] + ...: scaling AND adding, in one matmul
+
+
+# [10] ═══════════════════════ STEP 10 · ADD THE WEIGHTED VALUES TOGETHER ═══════════════════════
+# There's no new code for this step: the matrix multiply in weigh_values already adds the scaled values up.
+# That sum is what each token learned from the words before it. This is where information moves between tokens.
+
+
+# [11] ═══════════════════════ STEP 11 · COMBINE HEADS WITH THE OUTPUT MATRIX ═══════════════════════
+# Glue every head's result back into one vector and mix it with one more learned matrix. With that, attention
+# is complete, so here it is put together from steps 5-11: the only place where tokens exchange information.
+
+def attention(model, i, x):  # block i's attention; x (B, T, d) -> (B, T, d)
+    p = model["p"]  # the learned arrays
+    Bn, Tn, d = x.shape  # sizes
+    q, k, v, c_qkv = qkv_heads(model, i, x)  # step 5: queries, keys, values, split into heads
+    scores = attention_scores(q, k)  # step 6: how relevant every token looks to every other token
+    scores = hide_future(scores)  # step 7: no peeking at later words
+    w = softmax(scores)  # step 8: each row of scores becomes weights that add up to 1
+    out = weigh_values(w, v)  # steps 9 and 10: scale every value by its weight and add them up
+    out = out.transpose(0, 2, 1, 3).reshape(Bn, Tn, d)  # glue the heads: (B, H, T, hs) -> (B, T, H, hs) -> (B, T, d)
+    y, c_proj = linear(out, p[f"b{i}.proj.W"], p[f"b{i}.proj.b"])  # one more learned matrix, d -> d
+    return y, (c_qkv, c_proj, q, k, v, w)  # the result, plus everything backward will need
+
+
+# [12] ═══════════════════════ STEP 12 · ADD TO THE ORIGINAL VECTOR (1st residual) ═══════════════════════
+# Add attention's result onto the token's vector instead of replacing it: keep what it knew, add what it learned.
+
+def residual(x, update):  # x and update, both (B, T, d)
+    return x + update  # an edit on top of x, not a replacement
+
+
+# [13] ═══════════════════════ STEP 13 · NORMALIZE AGAIN ═══════════════════════
+# The same layernorm function from step 4, used again before the MLP, with its own g and b (named ln2).
+# No new code here: block() (step 17) calls layernorm a second time.
+
+
+# [14] ═══════════════════════ STEP 14 · EXPAND WITH THE FIRST MLP MATRIX ═══════════════════════
+# Widen each token to 4x as many numbers (128 -> 512), so there's room to check for many patterns. Each token
+# works alone here: no talking between tokens.
+
+def expand(model, i, x):  # block i: (B, T, d) -> (B, T, 4d)
+    p = model["p"]  # the learned arrays
+    return linear(x, p[f"b{i}.fc1.W"], p[f"b{i}.fc1.b"])  # widen, plus the Linear's cache
+
+
+# [15] ═══════════════════════ STEP 15 · ACTIVATE USEFUL FEATURES (GELU) ═══════════════════════
+# The bend: positive numbers pass, negative ones get squashed to about 0. Without it the MLP's two matrices
+# would multiply into one and add nothing. This is the tanh version GPT-2 uses.
+C = 0.7978845608  # sqrt(2 / pi)
+A = 0.044715  # a constant from the GELU paper
+
+
+def gelu(x):  # e.g. [-2, 0, 2] -> [-0.045, 0, 1.955]
+    return 0.5 * x * (1 + np.tanh(C * (x + A * x ** 3)))  # about x when x is big, about 0 when x is very negative
+
+
+# [16] ═══════════════════════ STEP 16 · COMBINE BACK WITH THE SECOND MLP MATRIX ═══════════════════════
+# Squeeze the patterns that switched on back down to the normal width. Then the whole MLP, from steps 14-16.
+
+def shrink(model, i, a):  # block i: (B, T, 4d) -> (B, T, d)
+    p = model["p"]  # the learned arrays
+    return linear(a, p[f"b{i}.fc2.W"], p[f"b{i}.fc2.b"])  # narrow back, plus the Linear's cache
+
+
+def mlp(model, i, x):  # block i's MLP; x (B, T, d) -> (B, T, d)
+    h, c1 = expand(model, i, x)  # step 14: widen to 4d
+    a = gelu(h)  # step 15: switch on the useful features
+    y, c2 = shrink(model, i, a)  # step 16: narrow back to d
+    return y, (c1, h, c2)  # the result, plus what backward needs (h is what went into gelu)
+
+
+# [17] ═══════════════════════ STEP 17 · ADD THE MLP RESULT (2nd residual) ═══════════════════════
+# The MLP's edit goes on top too. That finishes one transformer block, so here is the block, put together from
+# steps 4-17, and the function that makes one block's learned arrays.
+
+def init_block(rng, d, i):  # every learned array of block i, in the order they're made
+    p = {}  # name -> array
+    p[f"b{i}.ln1.g"], p[f"b{i}.ln1.b"] = init_layernorm(d)  # step 4: LayerNorm before attention
+    p[f"b{i}.qkv.W"], p[f"b{i}.qkv.b"] = init_linear(rng, d, 3 * d)  # step 5: d -> 3d, query | key | value
+    p[f"b{i}.proj.W"], p[f"b{i}.proj.b"] = init_linear(rng, d, d)  # step 11: the output matrix
+    p[f"b{i}.ln2.g"], p[f"b{i}.ln2.b"] = init_layernorm(d)  # step 13: LayerNorm before the MLP
+    p[f"b{i}.fc1.W"], p[f"b{i}.fc1.b"] = init_linear(rng, d, 4 * d)  # step 14: d -> 4d
+    p[f"b{i}.fc2.W"], p[f"b{i}.fc2.b"] = init_linear(rng, 4 * d, d)  # step 16: 4d -> d
+    return p  # 12 arrays
+
+
+def block(model, i, x):  # block i; x (B, T, d) -> (B, T, d)
+    p = model["p"]  # the learned arrays
+    a, c1 = layernorm(x, p[f"b{i}.ln1.g"], p[f"b{i}.ln1.b"])  # step 4: steady the numbers before attention
+    a, c2 = attention(model, i, a)  # steps 5-11: what each token gathered from the words before it
+    x = residual(x, a)  # step 12: keep what it knew, add what it learned
+    m, c3 = layernorm(x, p[f"b{i}.ln2.g"], p[f"b{i}.ln2.b"])  # step 13: steady the numbers again
+    m, c4 = mlp(model, i, m)  # steps 14-16: widen, bend, narrow
+    x = residual(x, m)  # step 17: the MLP's edit goes on top too
+    return x, (c1, c2, c3, c4)  # the block's output, plus all four caches
+
+
+# [18] ═══════════════════════ STEP 18 · DO IT AGAIN: THE STACK OF BLOCKS ═══════════════════════
+# Run the block again and again (4 times here). Each block reads what the last one wrote and refines it.
+
+def run_blocks(model, x):  # (B, T, d) -> (B, T, d), through every block
+    caches = []  # one cache per block, for backward
+    for i in range(model["n_layers"]):  # block 0, 1, 2, 3
+        x, c = block(model, i, x)  # this block's edits on top of x
+        caches.append(c)  # keep its cache
+    return x, caches  # the vectors after the last block
+
+
+# [19] ═══════════════════════ STEP 19 · SCORE EVERY POSSIBLE NEXT TOKEN ═══════════════════════
+# One last LayerNorm, then the head turns each vector into a score for every token in the vocabulary. Now the
+# whole model exists, so here are init_model (every learned array) and forward (ids in, scores out).
+
+def init_model(vocab, d=128, n_layers=4, n_heads=4, max_T=64, seed=0):  # e.g. init_model(512) -> a fresh random model
+    rng = np.random.default_rng(seed)  # one random generator, so the whole model is repeatable from seed
+    p = init_embed(rng, vocab, d, max_T)  # step 3: the two tables
+    for i in range(n_layers):  # step 18: every block gets its own arrays
+        p.update(init_block(rng, d, i))  # step 17: block i's 12 arrays
+    p["ln_f.g"], p["ln_f.b"] = init_layernorm(d)  # the final LayerNorm
+    p["head.W"], p["head.b"] = init_linear(rng, d, vocab)  # the head: d -> one score per token
+    return {"p": p, "n_heads": n_heads, "n_layers": n_layers, "max_T": max_T}  # the model: its numbers plus its sizes
+
+
+def forward(model, ids):  # ids (B, T) -> logits (B, T, vocab)
+    p = model["p"]  # the learned arrays
+    x = embed(p, ids)  # step 3: a vector per token (meaning + position)
+    x, caches = run_blocks(model, x)  # steps 4-18: every block
+    x, c_lnf = layernorm(x, p["ln_f.g"], p["ln_f.b"])  # one last steadying
+    logits, c_head = linear(x, p["head.W"], p["head.b"])  # (B, T, vocab): a guess at every position
+    return logits, (ids, caches, c_lnf, c_head)  # the scores, plus everything backward needs
+
+
+# [20] ═══════════════════════ STEP 20 · PROBABILITIES ═══════════════════════
+# Only the last position's scores are the guess for the NEXT token. Softmax turns them into probabilities.
+
+def next_logits(model, ids):  # ids: a plain list -> (vocab,) scores for the next token
+    recent = np.array([ids[-model["max_T"]:]])  # only the last max_T ids fit, as a (1, T) array
+    return forward(model, recent)[0][0, -1]  # the scores at the last position
+
+
+def next_probs(z, temperature=1.0, top_k=0):  # scores -> probabilities that add up to 1
+    z = z / temperature  # below 1 sharpens the guess (safer), above 1 flattens it (wilder)
+    if top_k:  # only allow the k best tokens
+        z = np.where(z < np.sort(z)[-top_k], -1e9, z)  # everything below the k-th best gets probability 0
+    return softmax(z)  # scores -> probabilities
+
+
+# [21] ═══════════════════════ STEP 21 · PICK ONE, ADD IT, REPEAT ═══════════════════════
+# Choose a token, turn ids back into text, and the writing loop.
+
+def tok_decode(tok, ids):  # e.g. [104, 105] -> "hi"
+    raw = b"".join(tok["vocab"][i] for i in ids)  # every id's bytes, joined
+    return raw.decode("utf-8", errors="replace")  # bytes -> text ("replace" in case it stopped mid-character)
+
+
+def pick(z, rng, temperature=1.0, top_k=0):  # scores -> one token id
+    if temperature <= 0:  # temperature 0 means "always the best"
+        return int(z.argmax())  # the top score
+    probs = next_probs(z, temperature, top_k)  # step 20: probabilities
+    return int(rng.choice(len(probs), p=probs))  # draw one token, each with its probability
+
+
+def generate(model, tok, prompt, max_new=40, temperature=1.0, top_k=0, seed=0):  # prompt -> longer text
+    rng = np.random.default_rng(seed)  # the dice, repeatable from seed
+    ids = tok_encode(tok, prompt)  # the prompt as token ids
+    for _ in range(max_new):  # one new token per loop
+        ids.append(pick(next_logits(model, ids), rng, temperature, top_k))  # guess, pick, append
+    return tok_decode(tok, ids)  # back to text
+
+
+def write(model, tok, prompts):  # print a story for each prompt
+    for n, prompt in enumerate(prompts):  # each prompt
+        print("\n" + generate(model, tok, prompt, max_new=80, temperature=0.8, top_k=40, seed=n).strip())  # 80 new tokens, a little randomness
+
+
+# [L1] ═══════════════════════ L1 · CUT THE TEXT INTO PRACTICE QUESTIONS ═══════════════════════
+# Everything from here on is how the model learned the numbers used above. None of them started out right.
+T = 64  # tokens the model reads at once (book: 256)
+B = 16  # windows per batch
+
+
+def split_ids(ids, frac=0.9):  # e.g. 100 ids -> (first 90, last 10)
+    n = int(len(ids) * frac)  # how many go to training
+    return ids[:n], ids[n:]  # learn from the first part, test on the rest (text it never trains on)
+
+
+def get_batch(ids, Bn, Tn, rng):  # Bn random windows of Tn tokens
+    starts = rng.integers(0, len(ids) - Tn, size=Bn)  # where each window starts
+    x = np.stack([ids[s:s + Tn] for s in starts])  # (Bn, Tn): the windows
+    y = np.stack([ids[s + 1:s + Tn + 1] for s in starts])  # the same windows shifted by one: the next token at every spot
+    return x, y  # y[b, t] is the right answer for x[b, t]
+
+
+# [L2] ═══════════════════════ L2 · GUESS, THEN MEASURE HOW WRONG: THE LOSS ═══════════════════════
+# How surprised the model was by each right answer, -log p(right), averaged. Random guessing over 512 tokens
+# scores ln 512 = 6.238.
+
+def cross_entropy(logits, targets):  # logits (N, V), targets (N,) -> one number
+    z = logits - logits.max(axis=-1, keepdims=True)  # shift each row so its biggest score is 0 (can't overflow)
+    log_total = np.log(np.exp(z).sum(axis=-1))  # log of each row's sum of e^z
+    right = z[np.arange(len(targets)), targets]  # each row's score for its right answer
+    return float(np.mean(log_total - right))  # -log p(right), averaged over every row
+
+
+def loss_fn(model, ids, targets):  # ids, targets (B, T) -> loss, cache
+    logits, cache = forward(model, ids)  # run the model
+    V = logits.shape[-1]  # vocabulary size
+    loss = cross_entropy(logits.reshape(-1, V), targets.reshape(-1))  # every position is its own question: (B*T, V)
+    return loss, (logits, targets, cache)  # the number, plus what backward needs
+
+
+# [L3] ═══════════════════════ L3 · BACKWARD STARTS AT THE GUESS ═══════════════════════
+# The first gradient, and the simplest: probabilities minus one-hot. Push the right token up, the rest down.
+
+def cross_entropy_backward(logits, targets):  # same shape as logits
+    probs = softmax(logits)  # what the model guessed
+    probs[np.arange(len(targets)), targets] -= 1  # minus 1 at each right answer
+    return probs / len(targets)  # divided by N, because the loss was an average
+
+
+# [L4] ═══════════════════════ L4 · BACK THROUGH EVERY BLOCK ═══════════════════════
+# Each backward function takes the gradient of its output (dy) and returns the gradient of its input (dx),
+# writing the gradients of its learned arrays into the dict g. It's the forward in reverse.
+
+def linear_backward(dy, cache):  # y = x @ W + b in reverse
+    x, W = cache  # what forward kept
+    x2, dy2 = x.reshape(-1, x.shape[-1]), dy.reshape(-1, dy.shape[-1])  # flatten every token into rows
+    return dy @ W.T, x2.T @ dy2, dy2.sum(axis=0)  # dx, dW (summed over every token), db
+
+
+def layernorm_backward(dy, cache):  # LayerNorm in reverse
+    xhat, inv, g = cache  # what forward kept
+    d = xhat.shape[-1]  # width
+    dg = (dy * xhat).reshape(-1, d).sum(axis=0)  # gradient of the scale: summed over every token
+    db = dy.reshape(-1, d).sum(axis=0)  # gradient of the shift
+    dxh = dy * g  # back through the scale
+    dx = inv * (dxh - dxh.mean(axis=-1, keepdims=True) - xhat * (dxh * xhat).mean(axis=-1, keepdims=True))  # remove the parts LayerNorm undoes (shift, rescale)
+    return dx, dg, db  # all three
+
+
+def gelu_backward(x, dy):  # x = what went into gelu
+    t = np.tanh(C * (x + A * x ** 3))  # the same tanh as the forward
+    slope = 0.5 * (1 + t) + 0.5 * x * (1 - t ** 2) * C * (1 + 3 * A * x ** 2)  # gelu's slope (product rule + chain rule)
+    return dy * slope  # chain rule: times the incoming gradient
+
+
+def attention_backward(model, i, dy, cache, g):  # block i's attention in reverse
+    c_qkv, c_proj, q, k, v, w = cache  # what forward kept
+    Bn, H, Tn, hs = q.shape  # sizes
+    dout, g[f"b{i}.proj.W"], g[f"b{i}.proj.b"] = linear_backward(dy, c_proj)  # back through the output matrix
+    dout = dout.reshape(Bn, Tn, H, hs).transpose(0, 2, 1, 3)  # split into heads like the forward
+    dw = dout @ v.transpose(0, 1, 3, 2)  # gradient of the weights (matmul rule: dA = dC @ B-transposed)
+    dv = w.transpose(0, 1, 3, 2) @ dout  # gradient of the values (dB = A-transposed @ dC)
+    ds = w * (dw - (dw * w).sum(axis=-1, keepdims=True)) / np.sqrt(hs)  # back through softmax, then the scaling
+    dq = ds @ k  # gradient of the queries
+    dk = ds.transpose(0, 1, 3, 2) @ q  # gradient of the keys
+    dqkv = np.concatenate([a.transpose(0, 2, 1, 3).reshape(Bn, Tn, H * hs) for a in (dq, dk, dv)], axis=-1)  # heads glued back, q|k|v side by side
+    dx, g[f"b{i}.qkv.W"], g[f"b{i}.qkv.b"] = linear_backward(dqkv, c_qkv)  # back through the Q/K/V matrix
+    return dx  # the gradient for what came into attention
+
+
+def mlp_backward(model, i, dy, cache, g):  # block i's MLP in reverse
+    c1, h, c2 = cache  # what forward kept
+    da, g[f"b{i}.fc2.W"], g[f"b{i}.fc2.b"] = linear_backward(dy, c2)  # back through fc2
+    dh = gelu_backward(h, da)  # back through the bend
+    dx, g[f"b{i}.fc1.W"], g[f"b{i}.fc1.b"] = linear_backward(dh, c1)  # back through fc1
+    return dx  # the gradient for what came into the MLP
+
+
+def block_backward(model, i, dy, cache, g):  # block i in reverse
+    c1, c2, c3, c4 = cache  # the four caches
+    dm = mlp_backward(model, i, dy, c4, g)  # back through the MLP
+    dm, g[f"b{i}.ln2.g"], g[f"b{i}.ln2.b"] = layernorm_backward(dm, c3)  # back through ln2
+    dx = dy + dm  # 2nd residual: the gradient goes straight through AND through the MLP, and they add
+    da = attention_backward(model, i, dx, c2, g)  # back through attention
+    da, g[f"b{i}.ln1.g"], g[f"b{i}.ln1.b"] = layernorm_backward(da, c1)  # back through ln1
+    return dx + da  # 1st residual: the same again
+
+
+# [L5] ═══════════════════════ L5 · THE VERY END OF BACKWARD: THE EMBEDDING TABLES ═══════════════════════
+# The gradient that survives all the way down lands on the two tables. Now every backward piece exists, so here
+# is backward itself: from the guess, back through every block, to the tables.
+
+def backward(model, lcache):  # returns g: name -> gradient, same shapes as model["p"]
+    logits, targets, (ids, caches, c_lnf, c_head) = lcache  # what loss_fn kept
+    V = logits.shape[-1]  # vocabulary size
+    g = {}  # the gradients
+    d = cross_entropy_backward(logits.reshape(-1, V), targets.reshape(-1)).reshape(logits.shape)  # L3: (B, T, vocab)
+    d, g["head.W"], g["head.b"] = linear_backward(d, c_head)  # L4: through the head
+    d, g["ln_f.g"], g["ln_f.b"] = layernorm_backward(d, c_lnf)  # through the final LayerNorm
+    for i in reversed(range(model["n_layers"])):  # block 3, 2, 1, 0
+        d = block_backward(model, i, d, caches[i], g)  # through this block
+    g["tok"] = np.zeros_like(model["p"]["tok"])  # L5: start the token table's gradient at 0
+    np.add.at(g["tok"], ids, d)  # add each token's push into its row (a repeated id gets ALL its pushes)
+    g["pos"] = np.zeros_like(model["p"]["pos"])  # same for the position table
+    g["pos"][:ids.shape[1]] = d.sum(axis=0)  # position t gets the pushes from spot t in every window
+    return g  # every gradient
+
+
+# [L6] ═══════════════════════ L6 · NUDGE EVERY NUMBER ═══════════════════════
+# Cap the total size of the gradients, then let Adam move every number a little downhill.
+import math  # cos and pi for the learning-rate schedule, sqrt for the gradient length  # noqa: E402
+
+
+def clip_grads(g, max_norm):  # shrink all gradients together if they're too long
+    norm = math.sqrt(sum(float((a ** 2).sum()) for a in g.values()))  # the length of every gradient as one long vector
+    if norm > max_norm:  # too long?
+        for a in g.values():  # every gradient
+            a *= max_norm / norm  # same shrink factor for all: direction kept, size capped
+    return norm  # the length before clipping
+
+
+def lr_at(step, steps, lr, warmup):  # the learning rate for this step
+    if step < warmup:  # first, warm up
+        return lr * (step + 1) / warmup  # a straight ramp from almost 0 to lr
+    progress = (step - warmup) / max(1, steps - warmup)  # 0 -> 1 over the rest of training
+    return lr * 0.5 * (1 + math.cos(math.pi * progress))  # a cosine curve from lr down to 0
+
+
+def adam_init(p):  # Adam's memory: one m and one v per learned array
+    return {"t": 0, "m": {n: np.zeros_like(a) for n, a in p.items()}, "v": {n: np.zeros_like(a) for n, a in p.items()}}  # all zeros at the start
+
+
+def adam_step(p, g, s, lr, b1=0.9, b2=0.95, eps=1e-8):  # move every number one step downhill
+    s["t"] += 1  # count the steps
+    for n in p:  # every learned array
+        s["m"][n] = b1 * s["m"][n] + (1 - b1) * g[n]  # running average of the gradient (momentum)
+        s["v"][n] = b2 * s["v"][n] + (1 - b2) * g[n] ** 2  # running average of the gradient squared (its usual size)
+        mhat = s["m"][n] / (1 - b1 ** s["t"])  # undo m starting at 0
+        vhat = s["v"][n] / (1 - b2 ** s["t"])  # undo v starting at 0
+        p[n] -= lr * mhat / (np.sqrt(vhat) + eps)  # step about lr in the direction the gradient has been pointing
+
+
+# [L7] ═══════════════════════ L7 · REPEAT, 3,000 TIMES ═══════════════════════
+
+def train(model, batch_fn, steps, lr, warmup=50, clip=1.0, log_every=100, seed=0):  # the training loop
+    rng = np.random.default_rng(seed)  # the dice for picking batches
+    s = adam_init(model["p"])  # Adam's memory
+    losses = []  # every step's loss
+    for step in range(steps):  # one turn per step
+        x, y = batch_fn(rng)  # 1. a fresh batch of practice questions
+        loss, cache = loss_fn(model, x, y)  # 2. forward: guess and measure how wrong
+        g = backward(model, cache)  # 3. backward: blame for every number
+        clip_grads(g, clip)  # 4. cap the gradients' total length
+        adam_step(model["p"], g, s, lr_at(step, steps, lr, warmup))  # 5 + 6. this step's learning rate, then nudge
+        losses.append(loss)  # remember the loss
+        if (step + 1) % log_every == 0 or step == 0:  # every log_every steps
+            print(f"step {step + 1:5d}  loss {loss:.4f}")  # show progress
+    return losses  # the whole curve
+
+
+# [L8] ═══════════════════════ L8 · THE WHOLE PROGRAM ═══════════════════════
+#   Run it:                      right-click this file -> Run 'gpt'   (about 5 minutes; saves gpt_onefile.pkl)
+#   Write with the saved model:  python gpt.py write "Once upon a time, there was a"
+import pickle  # save and load the trained numbers  # noqa: E402
+import sys  # the command-line words (write)  # noqa: E402
+import time  # how long training took  # noqa: E402
+
+D = 128  # width of each token's vector (book: 384)
+N_LAYERS = 4  # how many blocks (book: 6)
+N_HEADS = 4  # heads per block (book: 6)
+STEPS = 3000  # training steps
+LR = 3e-3  # peak learning rate
+WARMUP = 100  # steps to ramp the learning rate up
+SAVE_FILE = os.path.join(HERE, "gpt_onefile.pkl")  # where the trained numbers are saved
+PROMPTS = ["Once upon a time, there was a", "Tom and Sam went to the park.", "The little cat was sad because"]  # what it writes about
+
+
+def val_loss(model, ids, batches=20):  # average loss on text the model never trained on
+    rng = np.random.default_rng(123)  # the same batches every time, so before/after compare fairly
+    return float(np.mean([loss_fn(model, *get_batch(ids, B, T, rng))[0] for _ in range(batches)]))  # mean of 20 batch losses
+
+
+def save(model, tok, path):  # a trained model is just numbers: write them to a file, with the tokenizer
+    with open(path, "wb") as f:  # open it for writing bytes
+        pickle.dump({"model": model, "tok": tok}, f)  # dicts of arrays: easy to save
+
+
+def load(path):  # read it back
+    with open(path, "rb") as f:  # open it for reading bytes
+        saved = pickle.load(f)  # the dict we saved
+    return saved["model"], saved["tok"]  # the model and the tokenizer
+
+
+def main():  # what happens when you run this file
+    if sys.argv[1:2] == ["write"]:  # python gpt.py write "some prompt"
+        model, tok = load(SAVE_FILE)  # the trained model
+        return write(model, tok, sys.argv[2:] or PROMPTS)  # write and stop
+    start = time.time()  # start the clock
+    print("1. reading the stories")  # progress
+    text = read_text(TEXT_FILE)  # step 1: the whole thing as one string
+    print(f"   {len(text):,} characters")  # about a million
+    print(f"2. training the tokenizer: 256 bytes -> {VOCAB} tokens")  # progress
+    tok = new_tokenizer()  # step 2: an empty tokenizer
+    tok_train(tok, text[:TOK_CHARS], VOCAB)  # learn merges from the first 100,000 characters
+    ids = np.array(tok_encode(tok, text))  # ALL the text as token ids
+    train_ids, val_ids = split_ids(ids)  # L1: 90% to learn from, 10% to test on
+    print(f"   {len(ids):,} tokens: {len(train_ids):,} to learn from, {len(val_ids):,} to test on")  # progress
+    print("3. building the model")  # progress
+    model = init_model(VOCAB, d=D, n_layers=N_LAYERS, n_heads=N_HEADS, max_T=T)  # step 19: random numbers to start
+    n = sum(a.size for a in model["p"].values())  # how many learned numbers
+    print(f"   {N_LAYERS} blocks, {N_HEADS} heads, width {D}: {n:,} learned numbers")  # about 0.9 million
+    print(f"   before training: test loss {val_loss(model, val_ids):.3f} (random guessing: {math.log(VOCAB):.3f})")  # about ln 512
+    print(f"4. training for {STEPS} steps")  # progress
+    train(model, lambda rng: get_batch(train_ids, B, T, rng), STEPS, LR, warmup=WARMUP, log_every=100)  # L7: the long part
+    print(f"5. test loss {val_loss(model, val_ids):.3f}")  # on stories it never saw
+    save(model, tok, SAVE_FILE)  # keep the numbers
+    print(f"6. saved {SAVE_FILE}; trained in {(time.time() - start) / 60:.1f} minutes. 7. writing:")  # progress
+    write(model, tok, PROMPTS)  # step 21: the payoff
+
+
+if __name__ == "__main__":  # true only when you run this file itself (not when another file imports it)
+    main()  # go
