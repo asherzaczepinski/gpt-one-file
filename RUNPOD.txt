@@ -1,0 +1,63 @@
+Running main_functionized3.py on RunPod
+=======================================
+
+main_functionized3.py = main_functionized2.py made to run on a GPU:
+  - all the model math uses cupy (numpy, but on an NVIDIA GPU) when it's there, and plain numpy when it's not
+    (so it still runs on the Mac, just slowly)
+  - it runs the whole batch of windows at once, (B, 64, 128) instead of one (64, 128) window at a time.
+    a GPU is only fast with big chunks of work
+  - float32 on the GPU (GPUs are much faster at 32-bit numbers than 64-bit)
+  - checked on the Mac: same answers and same gradients as main_functionized2.py, and a gradient check with
+    batches + dropout passes
+
+You need 3 files on the pod:  main_functionized3.py   stories.txt   runpod_setup.sh
+
+
+1. MAKE A POD
+   runpod.io -> Pods -> Deploy.
+   GPU: any NVIDIA one is plenty, this model is small (2.4 million numbers). A cheap one like an RTX A4000,
+   RTX 3090 or RTX 4090 is fine, no need for an A100/H100.
+   Template: a "RunPod PyTorch" one (it comes with Python, CUDA 12 and Jupyter, everything cupy needs).
+   Leave the disk sizes at the default.
+
+2. UPLOAD THE 3 FILES
+   When the pod is running: Connect -> Jupyter Lab. In the file panel on the left (you'll be in /workspace),
+   drag in main_functionized3.py, stories.txt and runpod_setup.sh.
+
+3. SET IT UP (once)
+   In Jupyter: File -> New -> Terminal, then:
+      cd /workspace
+      bash runpod_setup.sh
+   It prints the GPU name, installs cupy + tiktoken, and checks cupy can do math on the GPU.
+
+4. TRAIN
+      nohup python main_functionized3.py > runs/pod1.log 2>&1 &
+      tail -f runs/pod1.log
+   The first line should say "running on the GPU (cupy)". If it says CPU, cupy didn't install right (step 3).
+   nohup = it keeps training even if you close the browser tab. Ctrl+C only stops the tail, not the training.
+   The settings are at the top of the "training" section of the file, same as main_functionized2.py
+   (run_name, training_steps, windows_per_step, learning_rate, dropout, ...). Change run_name for each new run
+   so they don't overwrite each other.
+
+5. WRITE STORIES WITH IT
+      RUN=pod1 python main_functionized3.py write "Once upon a time, there was a"
+
+6. GET THE MODEL BACK TO THE MAC
+   In Jupyter's file panel, open runs/, right-click pod1_best.pkl -> Download. Put it in runs/ on the Mac and it
+   works with main_functionized2.py too:
+      RUN=pod1 .venv/bin/python main_functionized2.py write "Once upon a time"
+
+7. STOP THE POD WHEN YOU'RE DONE
+   Pods charge by the hour while they're running, even if nothing is training. Pods page -> Stop (or Terminate
+   to delete it completely; download what you want first).
+
+
+Things to know
+  - the model is small and the training text is small (215,000 tokens), so the GPU's main win is SPEED: runs that
+    take 20+ minutes on one Mac core should take a minute or two, so you can try lots of settings fast.
+    it won't magically make the stories great, because the real limit right now is memorizing (see
+    main_functionized2_notes.txt, runs 5 and 6), not computing power.
+  - on a GPU, bigger batches are almost free: try windows_per_step = 64. but more windows per step = the model
+    sees the training text more times per step, so it starts memorizing in fewer steps. the _best.pkl file is
+    saved at the best test loss, so you always keep the best one either way.
+  - float32 on the GPU means losses can differ a tiny bit (like the 4th decimal) from the Mac's float64 runs.

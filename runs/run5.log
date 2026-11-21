@@ -1,0 +1,88 @@
+(64, 4841)
+loss 8.463, random guessing would be 8.485
+
+run5: 5000 steps, 16 windows per step, lr 0.003, adam True, warmup 100, cosine True, clip 1.0, weight decay 0.0
+test loss before training: 8.510
+step 100  train loss 5.978  lr 0.00300  0.5 min
+step 200  train loss 4.192  lr 0.00300  0.9 min
+   test loss 4.145   (best so far 4.145)
+step 300  train loss 3.864  lr 0.00299  1.4 min
+step 400  train loss 3.662  lr 0.00297  1.8 min
+step 500  train loss 3.477  lr 0.00295  2.3 min
+   test loss 3.843   (best so far 3.843)
+step 600  train loss 3.327  lr 0.00292  2.8 min
+step 700  train loss 3.224  lr 0.00289  3.2 min
+   test loss 3.727   (best so far 3.727)
+step 800  train loss 3.125  lr 0.00285  3.7 min
+step 900  train loss 3.050  lr 0.00281  4.1 min
+step 1000  train loss 2.965  lr 0.00276  4.6 min
+   test loss 3.652   (best so far 3.652)
+step 1100  train loss 2.891  lr 0.00270  5.0 min
+step 1200  train loss 2.821  lr 0.00264  5.5 min
+   test loss 3.613   (best so far 3.613)
+step 1300  train loss 2.769  lr 0.00258  6.0 min
+step 1400  train loss 2.702  lr 0.00251  6.4 min
+step 1500  train loss 2.614  lr 0.00244  6.9 min
+   test loss 3.581   (best so far 3.581)
+step 1600  train loss 2.562  lr 0.00236  7.3 min
+step 1700  train loss 2.488  lr 0.00228  7.8 min
+   test loss 3.621   (best so far 3.581)
+step 1800  train loss 2.469  lr 0.00219  8.2 min
+step 1900  train loss 2.390  lr 0.00211  8.7 min
+step 2000  train loss 2.324  lr 0.00202  9.1 min
+   test loss 3.654   (best so far 3.581)
+step 2100  train loss 2.251  lr 0.00193  9.6 min
+step 2200  train loss 2.214  lr 0.00183  10.1 min
+   test loss 3.711   (best so far 3.581)
+step 2300  train loss 2.122  lr 0.00174  10.5 min
+step 2400  train loss 2.104  lr 0.00164  11.0 min
+step 2500  train loss 2.042  lr 0.00155  11.4 min
+   test loss 3.764   (best so far 3.581)
+step 2600  train loss 1.976  lr 0.00145  11.9 min
+step 2700  train loss 1.924  lr 0.00136  12.3 min
+   test loss 3.884   (best so far 3.581)
+step 2800  train loss 1.883  lr 0.00126  12.8 min
+step 2900  train loss 1.805  lr 0.00117  13.3 min
+step 3000  train loss 1.751  lr 0.00107  13.7 min
+   test loss 3.950   (best so far 3.581)
+step 3100  train loss 1.696  lr 0.00098  14.2 min
+step 3200  train loss 1.652  lr 0.00089  14.7 min
+   test loss 4.007   (best so far 3.581)
+step 3300  train loss 1.597  lr 0.00081  15.1 min
+step 3400  train loss 1.570  lr 0.00072  15.6 min
+step 3500  train loss 1.525  lr 0.00064  16.0 min
+   test loss 4.071   (best so far 3.581)
+step 3600  train loss 1.469  lr 0.00057  16.5 min
+step 3700  train loss 1.419  lr 0.00049  17.0 min
+   test loss 4.141   (best so far 3.581)
+step 3800  train loss 1.409  lr 0.00042  17.4 min
+step 3900  train loss 1.395  lr 0.00036  17.9 min
+step 4000  train loss 1.346  lr 0.00030  18.3 min
+   test loss 4.203   (best so far 3.581)
+step 4100  train loss 1.330  lr 0.00024  18.8 min
+step 4200  train loss 1.291  lr 0.00019  19.2 min
+   test loss 4.232   (best so far 3.581)
+step 4300  train loss 1.275  lr 0.00015  19.7 min
+step 4400  train loss 1.259  lr 0.00011  20.2 min
+step 4500  train loss 1.268  lr 0.00008  20.6 min
+   test loss 4.243   (best so far 3.581)
+step 4600  train loss 1.250  lr 0.00005  21.1 min
+step 4700  train loss 1.238  lr 0.00003  21.5 min
+   test loss 4.255   (best so far 3.581)
+step 4800  train loss 1.214  lr 0.00001  22.0 min
+step 4900  train loss 1.238  lr 0.00000  22.4 min
+step 5000  train loss 1.247  lr 0.00000  22.9 min
+   test loss 4.257   (best so far 3.581)
+
+done in 22.9 minutes. final test loss 4.257, best 3.581
+
+Once upon a time, there was a little boy called The boy named Tim. Tim loved to go on a big bus. One day, he found a big box in his yard. He was very happy and wanted to show his toy to his friend, Sue.
+Tim's mom said, "Look, I found a tree with a lot of who is inside for play with!"
+Tim was happy and excited too at the tree too. He
+
+Tom and Sam went to the park. They liked to climb the tree and see the view. At the bottom, they saw a big door. They saw nothing Tim. Tim said, "Let's go on the tip of the road, we can climb the tree!" But Tim was very tired but he was brave. He didn't idea.
+So, the squirrel set to find a home. Tim was a independent dog and started to feels sad.
+
+The little cat was sad because it could not. The cat was bad and the cat was sad.
+The cat ran away to the cat's nest. The cat got mad. "I want to play with you!" said the cat and ran back to the cat. The boy said, "Hello, little cat! Do you want to play with me?" The cat was very happy and wanted to have the cat.
+The cat owner

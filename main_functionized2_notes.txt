@@ -1,0 +1,207 @@
+main_functionized2.py — notes
+=============================
+
+What this is:
+  main_functionized2.py = a copy of main_functionized.py (Asher's file) with the bottom swapped out so it
+  actually trains for real. It's the only code file Claude edits now. Asher's main_functionized.py is untouched.
+
+How to run it:
+  .venv/bin/python main_functionized2.py                       trains with the settings at the top of the training section
+  RUN=run3 .venv/bin/python main_functionized2.py write "Once upon a time"    writes with a saved run, no training
+
+Where things go:
+  runs/<run_name>.log         everything a run printed
+  runs/<run_name>_best.pkl    the model at its best test loss (this is the one to write stories with)
+  runs/<run_name>_model.pkl   the model at the very end of the run
+
+Keeping the Mac cool:
+  numpy is limited to 1 CPU core (VECLIB_MAXIMUM_THREADS=1, set at the very top of the file, before numpy loads),
+  and runs are started with "nice -n 19" (lowest priority, so anything Asher does gets the CPU first).
+  The M4 has 10 cores, so 1 busy core is a light load. Only one run at a time.
+
+  Watchdog (runs/watchdog.py, running all night, also at lowest priority):
+    every 10 seconds it checks (1) how many cores training is using and (2) whether macOS reports any thermal or
+    performance warning (pmset -g therm). If training uses more than 1.5 cores for 30 seconds straight, or the
+    Mac reports ANY thermal warning, it stops every training process and writes runs/STOP. No new run starts
+    while runs/STOP exists. Every 5 minutes it writes a status line to runs/watchdog.log.
+    It stops the training processes instead of shutting the Mac down: the training is the only thing making heat,
+    and a forced shutdown would close Asher's other apps without saving.
+    Tested before trusting it: a fake CPU hog using ~1.7 cores got stopped after 3 strikes, and the real training
+    run (1 core) was left alone. First version also matched shells that only mentioned the script name, fixed so it
+    only matches actual python processes running main_functionized2.py.
+
+
+CHANGES FROM main_functionized.py
+---------------------------------
+1. Top of file: set the 3 thread-limit environment variables before "import numpy", and import os, sys,
+   time, math, pickle (needed for timing, saving and the "write" mode).
+2. Bottom of file: everything after backward() was replaced. The old bottom did 30 steps on the SAME first
+   window (it just memorized 64 tokens). The new bottom:
+     - splits the tokens 90% train / 10% hidden test
+     - every step picks a RANDOM window from the training text (Asher's own comment said "need window to change")
+     - can average several windows per step (windows_per_step)
+     - optional: adam, warmup, cosine learning-rate slide, gradient clipping, weight decay
+     - every check_every steps: measures loss on 50 fixed test windows and saves the best model so far
+     - stops at max_minutes no matter what
+     - at the end: saves the model and writes 3 short stories
+     - "write" mode loads a saved run and writes stories without training
+   forward(), backward(), get_loss() and everything above them are unchanged (Asher's code and comments).
+3. Checked before running: gradient check on a tiny version of the model (2 blocks, 8 numbers per token):
+   every real gradient matches the measured slope to within 0.00000004.
+
+
+RUNS AND WHAT I LEARNED
+-----------------------
+(newest at the bottom)
+
+run1 (baseline: exactly Asher's training loop, just with a random window each step)
+  settings: 20000 steps, 1 window per step, plain nudging (no adam), learning rate 0.2 the whole time
+  time: 4.8 minutes
+  test loss: 8.51 -> 3.605 (best = final, it was still going down at the end)
+  train loss at the end: about 3.19 (average of the last 1000 steps)
+  what it wrote: "Once upon a time, there was a little boy named Tom. Tim loved to play together. ... Tim was very
+    sad because he could not see the bad too." -> real words, mostly real grammar, but it forgets who it's talking
+    about (Tom turns into Tim) and sentences don't connect.
+  learned:
+    - the random window was the whole fix. same code as before, but instead of memorizing 64 tokens it now learns
+      from the entire training text, and the test loss (stories it never saw) keeps dropping.
+    - train loss 3.19 vs test 3.61, a gap of 0.4. smaller gap than main3 had (2.0 vs 3.5), because this run hasn't
+      seen the training text enough times to memorize it yet: 20000 windows x 64 tokens = about 6 trips through it.
+    - still improving at the end, so it isn't done learning. plan: try adam next at the same amount of work
+      (20000 windows), to see how much a smarter nudge helps by itself.
+
+run2 (adam, everything else the same amount of work as run1)
+  settings: 20000 steps, 1 window per step, adam, learning rate 0.001, warmup 200 steps, cosine slide to 0, clip gradients at 1.0
+  time: 66 minutes on the clock, but only about 8 minutes of actual computing (see the sleep problem below)
+  test loss: 8.51 -> best 4.043 at step 8000, then it got WORSE (up to 4.128), ended at 4.094
+  train loss at the end: about 3.70
+  compared to run1 at the same steps:   step 1000: run2 4.68 vs run1 5.20 (adam faster at first)
+                                         step 8000: run2 4.04 vs run1 3.98
+                                         end:       run2 4.09 vs run1 3.61 (plain nudging won by a lot)
+  learned:
+    - adam learns faster at the start but then gets stuck and even goes backwards. my best guess: adam gives every
+      number about the same size step no matter how small or noisy its gradient is. with only 1 window per step the
+      gradients are really noisy (one window of one story), so adam keeps taking full-size steps in random
+      directions. plain nudging takes small steps when the gradient is small, which averages the noise out.
+      also the token table: only the ~50 tokens in the window get a gradient each step, and adam's memory keeps
+      pushing rows that weren't even in the window.
+    - test for the guess: run3 = adam again but average 16 windows per step (much less noisy gradients), with 1250
+      steps so it's the same total work (16 x 1250 = 20000 windows).
+  SLEEP PROBLEM (found during run2):
+    - the watchdog's every-5-minutes status lines were showing up 16 minutes apart. the mac's power log shows it
+      was going into deep sleep ("DarkWake from Deep Idle ... Maintenance") and waking up for a moment every ~16
+      minutes. the system sleep timer is set to 1 minute. training only runs while the mac is awake, so run2 was
+      frozen most of the time. no harm done, just slow.
+    - while awake, run2 did 0.024 sec per step (adam's extra math costs about 0.01 sec per step over plain nudging).
+    - fix: from run3 on, each run is started with "caffeinate -i", which keeps the mac from idle-sleeping ONLY while
+      that training run is going, and lets it sleep normally after. no settings changed. (if the lid gets closed,
+      a laptop sleeps anyway.)
+
+run3 (adam + 16 windows per step, same total work as run1 and run2)
+  settings: 1250 steps x 16 windows = 20000 windows, adam, learning rate 0.001, warmup 100, cosine, clip 1.0
+  time: 6.0 minutes (no sleeping this time, caffeinate worked)
+  test loss: 8.51 -> 3.590 (best = final)
+  train loss at the end: about 3.10
+  what it wrote: "Tom and Sam went to the park. They liked to walk in the garden. They all played with the park in
+    the park. They had fun and had lots of fun." -> cleaner sentences than run1, still repeats itself and drifts.
+  learned:
+    - the guess from run2 was right. same adam, same learning rate, but averaging 16 windows per step took it from
+      4.09 to 3.59. adam needs smooth gradients; with 1 window it was mostly chasing noise.
+    - 3.59 vs run1's 3.61: slightly better than plain nudging for the same work, and the curve was smoother
+      (it never went backwards). not a huge win by itself at this size, the big win of adam is it lets us
+      train longer without having to hand-tune the step size so much.
+    - each step is 16x the work but only 16 windows are averaged, so 1250 steps took about as long as run1's 20000.
+    - next (run4): same as run3 but learning rate 0.003 (what main3.py used), to see if bigger steps learn faster.
+
+run4 (run3 with a bigger learning rate: 0.003 instead of 0.001)
+  settings: 1250 steps x 16 windows, adam, learning rate 0.003, warmup 100, cosine, clip 1.0
+  time: 5.8 minutes
+  test loss: 8.51 -> 3.479 (best = final)      run3 at the same checkpoints: 3.590
+  train loss at the end: about 2.83
+  learned:
+    - bigger steps = learns faster: ahead of run3 at every single checkpoint, and it never went unstable.
+    - BUT the gap between train and test is growing: train 2.83 vs test 3.48 = 0.65 (run3 was 0.49, run1 0.42).
+      it's starting to memorize the training stories instead of learning things that work on new ones.
+      the model has 2.44 million numbers and the training text is only 215,000 tokens, so it CAN memorize.
+    - next (run5): same settings, 4x longer (5000 steps), to see how low the test loss goes before memorizing
+      takes over. then run6 = run5 + weight decay, to see if that fixes the memorizing.
+
+run5 (run4 but 4x longer: 5000 steps)
+  settings: 5000 steps x 16 windows, adam, learning rate 0.003, warmup 100, cosine, clip 1.0
+  time: 22.9 minutes
+  test loss: best 3.581 at step 1500, then it went UP the whole rest of the run, ending at 4.257
+  train loss: 2.97 (step 1000) -> 2.32 (2000) -> 1.75 (3000) -> 1.35 (4000) -> 1.25 (5000)
+  what it wrote at the end: "Tom and Sam went to the park. They liked to climb the tree and see the view. At the
+    bottom, they saw a big door." -> reads MORE fluent than earlier runs, even though the test loss is worse,
+    because it's reciting bits of training stories it memorized.
+  learned:
+    - this is memorizing (overfitting), very clearly: after step 1500 train loss kept falling (it got great at the
+      stories it trains on) while test loss rose (it got worse at stories it never saw). by the end train is 1.25
+      and test is 4.26, a gap of 3.0.
+    - 5000 steps x 16 windows x 64 tokens = 5.1 million tokens = about 24 trips through the 215,000 training tokens.
+      seeing the same stories 24 times with 2.44 million numbers to tune = enough to memorize them.
+    - the best checkpoint (3.581 at step 1500) is still worse than run4 (3.479). run4 ended at step 1250 with its
+      learning rate already slid down to 0, which let it settle. run5 at step 1500 was still taking big steps.
+      so: the cosine slide matters, and the right training length for this much text is short.
+    - fluent-looking stories are NOT the same as a good model. test loss is the honest number.
+    - next (run6): run5 + weight decay 0.1. weight decay shrinks every weight matrix a little bit each step, so
+      the model can only keep big weights that keep paying off across lots of windows. memorizing one story needs
+      very specific big weights, so it should get pushed back.
+
+run6 (run5 + weight decay 0.1)
+  settings: same as run5, plus weight decay 0.1 on every weight matrix and table
+  time: 22.9 minutes
+  test loss: best 3.589 at step 1500 (run5: 3.581), end 4.110 (run5: 4.257)
+  train loss at the end: 1.22 (run5: 1.25)
+  learned:
+    - weight decay barely did anything. the end is a little less bad (4.11 vs 4.26) but it still memorized just as
+      hard (train loss went to 1.22). at learning rate 0.003, decay 0.1 only shrinks each weight by 0.03% per step,
+      which is tiny next to how hard 24 trips through the same stories pushes them.
+    - so the memorizing needs something stronger. next: dropout.
+
+CHANGE 4: added dropout to forward() and backward() (needed for run7)
+  - dropout = randomly switch off some of the numbers (set to 0) on every training pass, and scale up the rest by
+    1 / (1 - dropout) so the total stays the same. 3 places, the standard ones:
+      the embeddings (right after token + position), attention's output, and the mlp's output
+      (right before each one gets added onto the vectors)
+  - backward: the same mask gets multiplied onto the gradient. a number that was switched off didn't affect the
+    loss, so it gets 0 gradient. the mask is saved in the cache like everything else.
+  - only on during training. test_loss() and generate() switch it off, because there we want the model's real
+    best guess, not a randomly damaged one.
+  - why it fights memorizing: memorizing a story means relying on very specific exact paths through the numbers.
+    if any of them might randomly be switched off, the model is forced to learn things that work in lots of ways,
+    which is what also works on new stories.
+  - checked: gradient check with dropout ON at 30% (using the same masks for every forward pass), worst error
+    0.00000006 across 90 numbers.
+
+run7 (run5 + dropout 0.1, no weight decay): started
+  run7 status (6:40am): only at step ~1200 of 5000. the mac went on battery around 2:34am and has been asleep
+    most of the night since ("Entering Sleep state due to 'Maintenance Sleep' ... Using Batt" in the power log).
+    caffeinate can't stop that (lid closed / unplugged). the watchdog's status lines show the same: every 5 minutes
+    until 2:34, then every ~16 minutes. nothing wrong, no thermal warnings, training just pauses while it sleeps.
+    early numbers vs run5 at the same steps: 3.93 vs 3.84 (step 500), 3.73 vs 3.65 (step 1000). dropout learns a
+    bit slower early, like it should. the real test is whether it stops the climb after step 1500.
+
+MAIN_FUNCTIONIZED3.PY (for RunPod), made from this file
+  - same model, same comments, but: cupy on a GPU (numpy fallback on the mac), the whole batch of windows runs at
+    once ((B, 64, 128) instead of a loop of (64, 128)), float32 on the GPU, and the arrays come back to the cpu for
+    saving and for picking tokens when writing.
+  - checked on the mac (numpy mode): gradient check with batches + dropout passes (worst 0.00000023), and it gives
+    the exact same scores, loss (8.514210) and gradients (to 15 decimal places) as this file. a 20-step test run
+    trains, tests, saves, writes, and the write mode works.
+  - can't test the actual GPU part from the mac (no NVIDIA GPU here). the cupy functions it uses are all standard
+    ones; runpod_setup.sh checks cupy works on the pod before training.
+  - setup steps are in RUNPOD.txt, the pod install script is runpod_setup.sh.
+
+run7 (run5 + dropout 0.1) -- finished, but cut short
+  stopped at step ~2000 of 5000 by the 60-minute limit (max_minutes counts clock time, and the mac slept most of it)
+  test loss: 4.19 (250) 3.93 (500) 3.77 3.73 (1000) 3.62 3.55 (1500) 3.57 3.54 3.54 (2000)    best 3.539
+  run5 at the same steps:                        3.73 (1000) 3.61 3.58 (1500) 3.62 3.65 3.71 (2000)
+  train loss at step 2000: 2.73 (run5 at step 2000: 2.32)
+  learned:
+    - dropout works. at step 2000 run5 had already climbed to 3.71 (memorizing), run7 was still at its best, 3.54.
+      best so far beats run5 (3.581) and run6 (3.589) and it hadn't stopped improving yet.
+    - train loss is higher with dropout (2.73 vs 2.32), which is the point: it's memorizing less.
+    - still not quite as good as run4 (3.479), which finished its whole cosine slide in 1250 steps. next to try
+      (on the pod, much faster): dropout 0.1 with the full 5000 steps, and dropout 0.2.
+    - max_minutes should not count sleep. on the pod it doesn't matter (pods don't sleep).

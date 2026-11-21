@@ -1,0 +1,13 @@
+(64, 4841)
+loss 8.463, random guessing would be 8.485
+78 gradients, one for every array in params: 78
+step 125  test loss 4.439
+step 250  test loss 4.138
+step 375  test loss 3.948
+step 500  test loss 3.800
+step 625  test loss 3.668
+step 750  test loss 3.603
+step 875  test loss 3.557
+step 1000  test loss 3.516
+step 1125  test loss 3.484
+step 1250  test loss 3.479

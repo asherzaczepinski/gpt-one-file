@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yours vs Modern</title>
+<style>
+:root {
+  --bg: #f7f3ea;
+  --paper: #fffdf7;
+  --ink: #1f1b16;
+  --muted: #6b6257;
+  --line: #e3dccd;
+  --grid: #ece6d9;
+  --accent: #b4441f;
+  --accent-soft: #f6dfd3;
+  --yours: #b4441f;
+  --modern: #3b6ea8;
+  --same: #1d5a3c;
+  --same-soft: #dbe9e1;
+  --diff: #6b4b00;
+  --diff-soft: #f9e3a8;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25; --grid: #2d281f;
+    --accent: #ec7a52; --accent-soft: #3d2519;
+    --yours: #d9693f; --modern: #5f95cf;
+    --same: #9fdcb9; --same-soft: #1d3428; --diff: #f5d27a; --diff-soft: #45360f;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25; --grid: #2d281f;
+  --accent: #ec7a52; --accent-soft: #3d2519;
+  --yours: #d9693f; --modern: #5f95cf;
+  --same: #9fdcb9; --same-soft: #1d3428; --diff: #f5d27a; --diff-soft: #45360f;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; }
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2.2em 0 .6em; }
+h3 { font-size: 1.05rem; margin: 1.4em 0 .4em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 1.2em 0; box-shadow: var(--shadow); }
+.card > :last-child { margin-bottom: 0; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; }
+.note > :last-child { margin-bottom: 0; }
+
+/* charts */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font: 500 .85rem/1 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin: 4px 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.chart h3 { margin: 1.3em 0 .1em; }
+.chart .sub { font-size: .88rem; color: var(--muted); margin: 0 0 .3em; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart svg text { font-family: "Avenir Next", system-ui, sans-serif; }
+.tip {
+  position: fixed; pointer-events: none; z-index: 10; opacity: 0; transition: opacity .1s;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 10px; font: 500 .82rem/1.4 "Avenir Next", system-ui, sans-serif; box-shadow: var(--shadow); max-width: 260px;
+}
+details { margin: .8em 0; }
+summary { cursor: pointer; font: 600 .9rem/1.4 "Avenir Next", system-ui, sans-serif; color: var(--accent); }
+
+table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .6em 0 1em; }
+th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .72rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+td.num { font-family: "SF Mono", Menlo, monospace; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.tag { display: inline-block; font: 600 .68rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; white-space: nowrap; }
+.tag.same { background: var(--same-soft); color: var(--same); }
+.tag.diff { background: var(--diff-soft); color: var(--diff); }
+.backlink { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; gap: 18px; flex-wrap: wrap; }
+.backlink a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow">Big picture · your model vs the real ones</div>
+<h1>Yours vs Modern</h1>
+<p class="lede">The model in <span class="mono">main_functionized.py</span> is genuinely the same kind of thing as ChatGPT, Claude or Llama: a decoder-only transformer that guesses the next token. The core math is the same. What's different is mostly <b>scale</b>, a handful of <b>upgraded parts</b>, and <b>what happens after training</b>.</p>
+
+<div class="note">
+<p><b>The one-sentence version:</b> you built the engine. Modern models use the same engine design with a few better parts, make it 100,000+ times bigger, feed it 70 million times more text, and then teach it to be an assistant.</p>
+</div>
+
+<h2>1. Scale: the biggest difference by far</h2>
+<p>Each chart uses a log scale: every gridline is 1,000 times the one before it. On a normal scale, your model's bar would be invisible. Hover a bar for the exact number.</p>
+<div class="legend"><span><i style="background:var(--yours)"></i>your model</span><span><i style="background:var(--modern)"></i>published models</span></div>
+<div class="chart" id="charts"></div>
+<details>
+<summary>Show the numbers as a table</summary>
+<div class="scroll"><table id="table"></table></div>
+</details>
+<p style="font-size:.9rem;color:var(--muted)">Numbers are what each team published: GPT-2 (OpenAI, 2019, the biggest 1.5B version), GPT-3 (OpenAI, 2020), Llama 3.1 405B (Meta, 2024). OpenAI didn't publish GPT-2's token count. The newest closed models (GPT-4 and later, Claude, Gemini) don't publish their sizes, so they're left out instead of guessed.</p>
+
+<h3>Why scale matters: your model is starving for text</h3>
+<p>A well-known 2022 study (DeepMind's "Chinchilla" paper) found that for the best results, a model should train on about <b>20 tokens for every learned number</b>. Your model has 2.44 million numbers, so it would want about <b>49 million tokens</b>. <span class="mono">stories.txt</span> has 215,000 training tokens: <b>about 225 times too few</b>.</p>
+<p>That's exactly the memorizing you saw in run 5. With too little text, the model has to see the same stories over and over (24 trips through them), and after enough trips it starts learning the stories themselves instead of how stories work. Big models see most of their text only once, so they can't memorize it the same way.</p>
+
+<h2>2. The parts: what's the same and what got upgraded</h2>
+<p>Go down your <span class="mono">forward()</span> function and this is how each piece compares to a modern model like Llama 3:</p>
+<div class="scroll">
+<table>
+  <tr><th>Your piece</th><th></th><th>In modern models</th></tr>
+  <tr><td>BPE tokenizer (tiktoken)</td><td><span class="tag same">same</span></td><td>Yours literally uses GPT-4o's tokenizer. You renumbered to the 4,841 tokens your stories use; real models keep the whole vocab (100K–200K tokens).</td></tr>
+  <tr><td>Token embedding table</td><td><span class="tag same">same</span></td><td>Same idea, one row per token, just way wider (thousands of numbers per token instead of 128).</td></tr>
+  <tr><td>Position embedding table</td><td><span class="tag diff">upgraded</span></td><td><b>RoPE</b> (rotary positions). Instead of adding a learned row for each slot, it <i>rotates</i> each query and key by an angle that depends on its position. Then the q·k score depends on how far apart two tokens are, not where they are. Works better and stretches to much longer contexts. Your 64-row table can never go past token 64.</td></tr>
+  <tr><td>Layer norm</td><td><span class="tag diff">upgraded</span></td><td><b>RMSNorm</b>. Skips subtracting the average and just divides by the size of the numbers (root-mean-square), with a learned scale and no shift. A little cheaper, and works just as well.</td></tr>
+  <tr><td>Queries, keys, values, heads</td><td><span class="tag same">same</span></td><td>Same math: q·k scores, √(head size), hide the future, softmax, weights @ values. Your comments about what q, k and v mean apply exactly.</td></tr>
+  <tr><td>Every head has its own keys and values</td><td><span class="tag diff">upgraded</span></td><td><b>Grouped-query attention</b>: several query heads share one key/value head. Keys and values have to be stored for every earlier token while writing, so sharing them saves a huge amount of memory with long contexts.</td></tr>
+  <tr><td>The full 64×64 score grid</td><td><span class="tag diff">upgraded</span></td><td><b>FlashAttention</b>: the exact same math, but computed in small tiles so the giant T×T grid never sits in memory all at once. With 128,000 tokens that grid would be impossible to store.</td></tr>
+  <tr><td>Residuals (vectors + attention, vectors + mlp)</td><td><span class="tag same">same</span></td><td>Identical, including putting the norm <i>before</i> attention and the MLP (pre-norm).</td></tr>
+  <tr><td>MLP: expand 4×, gelu, shrink</td><td><span class="tag diff">upgraded</span></td><td><b>SwiGLU</b>: two expand matrices instead of one. One goes through a smooth bend (like gelu) and acts as a <i>gate</i>, then the two are multiplied together before shrinking back. The gate lets each detector decide how much of the other path gets through.</td></tr>
+  <tr><td>One MLP per block</td><td><span class="tag diff">sometimes</span></td><td><b>Mixture of experts</b> (in some models): many MLPs per block, and a small router picks just a couple of them for each token. Lots of total numbers, but each token only uses a few.</td></tr>
+  <tr><td>Biases in every linear</td><td><span class="tag diff">dropped</span></td><td>Many modern models (Llama included) have no biases at all. They turned out not to help at scale.</td></tr>
+  <tr><td>6 blocks</td><td><span class="tag diff">bigger</span></td><td>GPT-3: 96 blocks. Llama 3.1 405B: 126 blocks. Same block, stacked way higher.</td></tr>
+  <tr><td>Head (picking) + softmax</td><td><span class="tag same">same</span></td><td>Same: one score per token in the vocab, softmax, -log(probability of the right one).</td></tr>
+</table>
+</div>
+
+<h2>3. Training: same recipe, way more of it</h2>
+<div class="scroll">
+<table>
+  <tr><th>Yours</th><th></th><th>Modern</th></tr>
+  <tr><td>Backward pass written by hand</td><td><span class="tag diff">automated</span></td><td>PyTorch or JAX work out the backward pass automatically ("autograd"). It's the exact same chain rule you wrote, just generated by the computer instead of by hand.</td></tr>
+  <tr><td>Adam, warmup, cosine slide, clipping</td><td><span class="tag same">same</span></td><td>Same recipe. They use <b>AdamW</b> (Adam plus weight decay done a slightly different way). Your learning-rate ramp and cosine slide are exactly what big models use too.</td></tr>
+  <tr><td>Dropout to stop memorizing</td><td><span class="tag diff">usually off</span></td><td>Big pretraining runs usually turn dropout off, because they have so much text that memorizing isn't the problem. You need it because you're short on text.</td></tr>
+  <tr><td>float64, one CPU core</td><td><span class="tag diff">bigger</span></td><td>16-bit numbers (bfloat16) on thousands of GPUs at once, for weeks or months. Each GPU runs a slice of the batch or a slice of the model.</td></tr>
+  <tr><td>16 windows per step</td><td><span class="tag diff">bigger</span></td><td>Millions of tokens per step.</td></tr>
+</table>
+</div>
+
+<h2>4. After training: how a text predictor becomes an assistant</h2>
+<p>Here's a difference that has nothing to do with size. What you've built is a <b>base model</b>: it continues text. Give it "Once upon a time" and it keeps writing a story. Ask it a question and it would just keep writing more text that looks like the question.</p>
+<p>Chat models go through more training after the main run:</p>
+<ol>
+  <li><b>Instruction tuning:</b> keep training, but on example conversations: a question, then a good answer. Same loss, same backward pass, just different text. The model learns that after a question comes an answer.</li>
+  <li><b>Preference training</b> (like RLHF): people (or other models) compare pairs of answers and pick the better one, and the model gets nudged toward the kind of answers that get picked. This is where things like helpfulness and honesty get shaped.</li>
+</ol>
+
+<h2>5. Writing: same loop, faster</h2>
+<p>Your writing loop is the real thing: run the model, take the last spot's scores, apply temperature and top-k, roll the dice, add the token, repeat. Modern models do exactly that (often with <b>top-p</b> too: keep the smallest group of tokens whose probabilities add up to, say, 90%).</p>
+<p>One speed trick they add: the <b>KV cache</b>. Your <span class="mono">generate</span> runs all 64 tokens through the whole model again for every new token, even though the earlier tokens' keys and values haven't changed. Modern models save each token's keys and values the first time, so each new token only has to compute its own. That's also why grouped-query attention matters so much: that cache gets enormous with long contexts.</p>
+
+<div class="note">
+<p><b>So what did you actually build?</b> A real, working GPT, missing mostly scale and polish. If you swapped your position table for RoPE, your layer norm for RMSNorm, and your MLP for SwiGLU, you'd have the same block design as Llama. Then the main thing between you and a modern model is hundreds of thousands of times more numbers, tens of millions of times more text, and a few million dollars of GPUs.</p>
+</div>
+
+<div class="backlink"><a href="backprop.html">← Backprop Rules</a><a href="bpe.html">← Byte Pair Encoding</a></div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+(function () {
+  const models = [
+    { name: "Your model", yours: true,  params: 2442217,  tokens: 215470,  context: 64 },
+    { name: "GPT-2 (1.5B)",             params: 1.5e9,    tokens: null,    context: 1024 },
+    { name: "GPT-3",                    params: 175e9,    tokens: 300e9,   context: 2048 },
+    { name: "Llama 3.1 405B",           params: 405e9,    tokens: 15e12,   context: 131072 },
+  ];
+  const measures = [
+    { key: "params",  title: "Learned numbers (parameters)", sub: "how many numbers the model learns", min: 1e6, max: 1e12 },
+    { key: "tokens",  title: "Training text (tokens)", sub: "how much text it learned from (Llama: over 15 trillion)", min: 1e5, max: 1e14 },
+    { key: "context", title: "Context length (tokens)", sub: "how far back it can see", min: 10, max: 1e6 },
+  ];
+  const short = v => {
+    const u = [[1e12, "T"], [1e9, "B"], [1e6, "M"], [1e3, "K"]];
+    for (const [d, s] of u) if (v >= d) { const x = v / d; return (x >= 100 ? Math.round(x) : +x.toFixed(x >= 10 ? 0 : 1)) + s; }
+    return String(v);
+  };
+  const full = v => v.toLocaleString("en-US");
+  const tip = document.getElementById("tip");
+  const host = document.getElementById("charts");
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+
+  measures.forEach(m => {
+    const box = document.createElement("div");
+    box.innerHTML = `<h3>${m.title}</h3><p class="sub">${m.sub}</p>`;
+    host.appendChild(box);
+    const W = 700, labelW = 128, right = 64, rowH = 34, top = 6, axisH = 22;
+    const H = top + rowH * models.length + axisH;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": m.title });
+    box.appendChild(svg);
+    const lo = Math.log10(m.min), hi = Math.log10(m.max);
+    const x = v => labelW + (Math.log10(v) - lo) / (hi - lo) * (W - labelW - right);
+    // gridlines at every power of 10 that's a multiple of 3: 1K, 1M, 1B, 1T (each 1,000x the last)
+    for (let p = Math.ceil(lo); p <= hi; p++) {
+      if (p % 3 !== 0) continue;
+      const gx = x(10 ** p);
+      el("line", { x1: gx, x2: gx, y1: top, y2: H - axisH + 2, stroke: "var(--grid)", "stroke-width": 1 }, svg);
+      const t = el("text", { x: gx, y: H - 6, "text-anchor": "middle", "font-size": 11, fill: "var(--muted)" }, svg);
+      t.textContent = short(10 ** p);
+    }
+    const yours = models[0][m.key];
+    models.forEach((d, i) => {
+      const cy = top + i * rowH + rowH / 2;
+      const name = el("text", { x: 0, y: cy + 4, "font-size": 13, fill: "var(--ink)", "font-weight": d.yours ? 600 : 400 }, svg);
+      name.textContent = d.name;
+      const v = d[m.key];
+      if (v == null) {
+        const t = el("text", { x: labelW + 4, y: cy + 4, "font-size": 12, fill: "var(--muted)", "font-style": "italic" }, svg);
+        t.textContent = "not published";
+        return;
+      }
+      const x0 = labelW, x1 = Math.max(x(v), x0 + 6), h = 18, y0 = cy - h / 2, r = 4;
+      const path = `M${x0},${y0} H${x1 - r} Q${x1},${y0} ${x1},${y0 + r} V${y0 + h - r} Q${x1},${y0 + h} ${x1 - r},${y0 + h} H${x0} Z`;
+      el("path", { d: path, fill: d.yours ? "var(--yours)" : "var(--modern)" }, svg);
+      const val = el("text", { x: x1 + 6, y: cy + 4, "font-size": 12, fill: "var(--muted)" }, svg);
+      val.textContent = short(v);
+      const hit = el("rect", { x: 0, y: cy - rowH / 2, width: W, height: rowH, fill: "transparent" }, svg);
+      const times = d.yours ? "" : `<br>${full(Math.round(v / yours))}× your model`;
+      const show = e => { tip.innerHTML = `<b>${d.name}</b><br>${m.title.split(" (")[0]}: ${full(v)}${times}`; tip.style.opacity = 1; move(e); };
+      const move = e => { tip.style.left = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + "px"; tip.style.top = (e.clientY + 14) + "px"; };
+      hit.addEventListener("mouseenter", show); hit.addEventListener("mousemove", move);
+      hit.addEventListener("mouseleave", () => tip.style.opacity = 0);
+    });
+  });
+
+  // table view
+  const t = document.getElementById("table");
+  t.innerHTML = `<tr><th>Model</th><th>Parameters</th><th>Training tokens</th><th>Context</th></tr>` +
+    models.map(d => `<tr><td>${d.name}</td><td class="num">${full(d.params)}</td><td class="num">${d.tokens == null ? "not published" : (d.name.startsWith("Llama") ? "over " : "") + full(d.tokens)}</td><td class="num">${full(d.context)}</td></tr>`).join("");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,235 @@
+(64, 4841)
+loss 8.463, random guessing would be 8.485
+
+run1: 20000 steps, 1 windows per step, lr 0.2, adam False, warmup 0, cosine False, clip None, weight decay 0.0
+test loss before training: 8.510
+step 100  train loss 6.601  lr 0.20000  0.0 min
+step 200  train loss 6.297  lr 0.20000  0.0 min
+step 300  train loss 6.053  lr 0.20000  0.1 min
+step 400  train loss 5.957  lr 0.20000  0.1 min
+step 500  train loss 5.783  lr 0.20000  0.1 min
+step 600  train loss 5.642  lr 0.20000  0.1 min
+step 700  train loss 5.536  lr 0.20000  0.2 min
+step 800  train loss 5.337  lr 0.20000  0.2 min
+step 900  train loss 5.160  lr 0.20000  0.2 min
+step 1000  train loss 5.221  lr 0.20000  0.2 min
+   test loss 5.204   (best so far 5.204)
+step 1100  train loss 5.015  lr 0.20000  0.3 min
+step 1200  train loss 5.104  lr 0.20000  0.3 min
+step 1300  train loss 5.003  lr 0.20000  0.3 min
+step 1400  train loss 4.832  lr 0.20000  0.3 min
+step 1500  train loss 4.842  lr 0.20000  0.3 min
+step 1600  train loss 4.756  lr 0.20000  0.4 min
+step 1700  train loss 4.746  lr 0.20000  0.4 min
+step 1800  train loss 4.685  lr 0.20000  0.4 min
+step 1900  train loss 4.551  lr 0.20000  0.4 min
+step 2000  train loss 4.675  lr 0.20000  0.5 min
+   test loss 4.644   (best so far 4.644)
+step 2100  train loss 4.557  lr 0.20000  0.5 min
+step 2200  train loss 4.500  lr 0.20000  0.5 min
+step 2300  train loss 4.506  lr 0.20000  0.5 min
+step 2400  train loss 4.529  lr 0.20000  0.6 min
+step 2500  train loss 4.477  lr 0.20000  0.6 min
+step 2600  train loss 4.347  lr 0.20000  0.6 min
+step 2700  train loss 4.330  lr 0.20000  0.6 min
+step 2800  train loss 4.349  lr 0.20000  0.7 min
+step 2900  train loss 4.417  lr 0.20000  0.7 min
+step 3000  train loss 4.311  lr 0.20000  0.7 min
+   test loss 4.434   (best so far 4.434)
+step 3100  train loss 4.306  lr 0.20000  0.7 min
+step 3200  train loss 4.397  lr 0.20000  0.8 min
+step 3300  train loss 4.229  lr 0.20000  0.8 min
+step 3400  train loss 4.320  lr 0.20000  0.8 min
+step 3500  train loss 4.284  lr 0.20000  0.8 min
+step 3600  train loss 4.202  lr 0.20000  0.8 min
+step 3700  train loss 4.250  lr 0.20000  0.9 min
+step 3800  train loss 4.205  lr 0.20000  0.9 min
+step 3900  train loss 4.173  lr 0.20000  0.9 min
+step 4000  train loss 4.099  lr 0.20000  0.9 min
+   test loss 4.287   (best so far 4.287)
+step 4100  train loss 4.268  lr 0.20000  1.0 min
+step 4200  train loss 4.172  lr 0.20000  1.0 min
+step 4300  train loss 4.049  lr 0.20000  1.0 min
+step 4400  train loss 4.146  lr 0.20000  1.0 min
+step 4500  train loss 4.143  lr 0.20000  1.1 min
+step 4600  train loss 4.041  lr 0.20000  1.1 min
+step 4700  train loss 4.077  lr 0.20000  1.1 min
+step 4800  train loss 4.110  lr 0.20000  1.1 min
+step 4900  train loss 4.080  lr 0.20000  1.2 min
+step 5000  train loss 4.048  lr 0.20000  1.2 min
+   test loss 4.227   (best so far 4.227)
+step 5100  train loss 4.046  lr 0.20000  1.2 min
+step 5200  train loss 3.986  lr 0.20000  1.2 min
+step 5300  train loss 4.012  lr 0.20000  1.3 min
+step 5400  train loss 3.984  lr 0.20000  1.3 min
+step 5500  train loss 3.972  lr 0.20000  1.3 min
+step 5600  train loss 3.981  lr 0.20000  1.3 min
+step 5700  train loss 4.007  lr 0.20000  1.4 min
+step 5800  train loss 3.953  lr 0.20000  1.4 min
+step 5900  train loss 3.859  lr 0.20000  1.4 min
+step 6000  train loss 3.960  lr 0.20000  1.4 min
+   test loss 4.177   (best so far 4.177)
+step 6100  train loss 4.054  lr 0.20000  1.5 min
+step 6200  train loss 3.948  lr 0.20000  1.5 min
+step 6300  train loss 3.944  lr 0.20000  1.5 min
+step 6400  train loss 3.936  lr 0.20000  1.5 min
+step 6500  train loss 3.880  lr 0.20000  1.5 min
+step 6600  train loss 3.897  lr 0.20000  1.6 min
+step 6700  train loss 3.941  lr 0.20000  1.6 min
+step 6800  train loss 3.825  lr 0.20000  1.6 min
+step 6900  train loss 3.849  lr 0.20000  1.6 min
+step 7000  train loss 3.872  lr 0.20000  1.7 min
+   test loss 4.047   (best so far 4.047)
+step 7100  train loss 3.837  lr 0.20000  1.7 min
+step 7200  train loss 3.805  lr 0.20000  1.7 min
+step 7300  train loss 3.813  lr 0.20000  1.7 min
+step 7400  train loss 3.776  lr 0.20000  1.8 min
+step 7500  train loss 3.830  lr 0.20000  1.8 min
+step 7600  train loss 3.759  lr 0.20000  1.8 min
+step 7700  train loss 3.776  lr 0.20000  1.8 min
+step 7800  train loss 3.800  lr 0.20000  1.9 min
+step 7900  train loss 3.819  lr 0.20000  1.9 min
+step 8000  train loss 3.713  lr 0.20000  1.9 min
+   test loss 3.982   (best so far 3.982)
+step 8100  train loss 3.818  lr 0.20000  2.0 min
+step 8200  train loss 3.733  lr 0.20000  2.0 min
+step 8300  train loss 3.571  lr 0.20000  2.0 min
+step 8400  train loss 3.741  lr 0.20000  2.0 min
+step 8500  train loss 3.682  lr 0.20000  2.1 min
+step 8600  train loss 3.692  lr 0.20000  2.1 min
+step 8700  train loss 3.723  lr 0.20000  2.1 min
+step 8800  train loss 3.781  lr 0.20000  2.1 min
+step 8900  train loss 3.737  lr 0.20000  2.2 min
+step 9000  train loss 3.626  lr 0.20000  2.2 min
+   test loss 3.955   (best so far 3.955)
+step 9100  train loss 3.693  lr 0.20000  2.2 min
+step 9200  train loss 3.638  lr 0.20000  2.2 min
+step 9300  train loss 3.634  lr 0.20000  2.3 min
+step 9400  train loss 3.621  lr 0.20000  2.3 min
+step 9500  train loss 3.616  lr 0.20000  2.3 min
+step 9600  train loss 3.593  lr 0.20000  2.4 min
+step 9700  train loss 3.603  lr 0.20000  2.4 min
+step 9800  train loss 3.652  lr 0.20000  2.4 min
+step 9900  train loss 3.591  lr 0.20000  2.4 min
+step 10000  train loss 3.613  lr 0.20000  2.5 min
+   test loss 3.875   (best so far 3.875)
+step 10100  train loss 3.580  lr 0.20000  2.5 min
+step 10200  train loss 3.588  lr 0.20000  2.5 min
+step 10300  train loss 3.614  lr 0.20000  2.5 min
+step 10400  train loss 3.549  lr 0.20000  2.5 min
+step 10500  train loss 3.544  lr 0.20000  2.6 min
+step 10600  train loss 3.659  lr 0.20000  2.6 min
+step 10700  train loss 3.587  lr 0.20000  2.6 min
+step 10800  train loss 3.574  lr 0.20000  2.6 min
+step 10900  train loss 3.583  lr 0.20000  2.7 min
+step 11000  train loss 3.544  lr 0.20000  2.7 min
+   test loss 3.838   (best so far 3.838)
+step 11100  train loss 3.500  lr 0.20000  2.7 min
+step 11200  train loss 3.490  lr 0.20000  2.7 min
+step 11300  train loss 3.533  lr 0.20000  2.8 min
+step 11400  train loss 3.529  lr 0.20000  2.8 min
+step 11500  train loss 3.549  lr 0.20000  2.8 min
+step 11600  train loss 3.448  lr 0.20000  2.8 min
+step 11700  train loss 3.503  lr 0.20000  2.9 min
+step 11800  train loss 3.470  lr 0.20000  2.9 min
+step 11900  train loss 3.564  lr 0.20000  2.9 min
+step 12000  train loss 3.560  lr 0.20000  2.9 min
+   test loss 3.812   (best so far 3.812)
+step 12100  train loss 3.475  lr 0.20000  2.9 min
+step 12200  train loss 3.428  lr 0.20000  3.0 min
+step 12300  train loss 3.422  lr 0.20000  3.0 min
+step 12400  train loss 3.496  lr 0.20000  3.0 min
+step 12500  train loss 3.444  lr 0.20000  3.0 min
+step 12600  train loss 3.458  lr 0.20000  3.1 min
+step 12700  train loss 3.436  lr 0.20000  3.1 min
+step 12800  train loss 3.328  lr 0.20000  3.1 min
+step 12900  train loss 3.424  lr 0.20000  3.1 min
+step 13000  train loss 3.523  lr 0.20000  3.2 min
+   test loss 3.775   (best so far 3.775)
+step 13100  train loss 3.456  lr 0.20000  3.2 min
+step 13200  train loss 3.400  lr 0.20000  3.2 min
+step 13300  train loss 3.390  lr 0.20000  3.2 min
+step 13400  train loss 3.434  lr 0.20000  3.3 min
+step 13500  train loss 3.389  lr 0.20000  3.3 min
+step 13600  train loss 3.469  lr 0.20000  3.3 min
+step 13700  train loss 3.350  lr 0.20000  3.3 min
+step 13800  train loss 3.356  lr 0.20000  3.3 min
+step 13900  train loss 3.417  lr 0.20000  3.4 min
+step 14000  train loss 3.351  lr 0.20000  3.4 min
+   test loss 3.742   (best so far 3.742)
+step 14100  train loss 3.401  lr 0.20000  3.4 min
+step 14200  train loss 3.397  lr 0.20000  3.4 min
+step 14300  train loss 3.326  lr 0.20000  3.5 min
+step 14400  train loss 3.526  lr 0.20000  3.5 min
+step 14500  train loss 3.393  lr 0.20000  3.5 min
+step 14600  train loss 3.330  lr 0.20000  3.5 min
+step 14700  train loss 3.403  lr 0.20000  3.5 min
+step 14800  train loss 3.432  lr 0.20000  3.6 min
+step 14900  train loss 3.343  lr 0.20000  3.6 min
+step 15000  train loss 3.234  lr 0.20000  3.6 min
+   test loss 3.723   (best so far 3.723)
+step 15100  train loss 3.366  lr 0.20000  3.6 min
+step 15200  train loss 3.308  lr 0.20000  3.7 min
+step 15300  train loss 3.380  lr 0.20000  3.7 min
+step 15400  train loss 3.303  lr 0.20000  3.7 min
+step 15500  train loss 3.301  lr 0.20000  3.7 min
+step 15600  train loss 3.286  lr 0.20000  3.8 min
+step 15700  train loss 3.275  lr 0.20000  3.8 min
+step 15800  train loss 3.338  lr 0.20000  3.8 min
+step 15900  train loss 3.266  lr 0.20000  3.8 min
+step 16000  train loss 3.361  lr 0.20000  3.8 min
+   test loss 3.713   (best so far 3.713)
+step 16100  train loss 3.356  lr 0.20000  3.9 min
+step 16200  train loss 3.272  lr 0.20000  3.9 min
+step 16300  train loss 3.196  lr 0.20000  3.9 min
+step 16400  train loss 3.277  lr 0.20000  3.9 min
+step 16500  train loss 3.308  lr 0.20000  4.0 min
+step 16600  train loss 3.302  lr 0.20000  4.0 min
+step 16700  train loss 3.294  lr 0.20000  4.0 min
+step 16800  train loss 3.264  lr 0.20000  4.0 min
+step 16900  train loss 3.377  lr 0.20000  4.1 min
+step 17000  train loss 3.243  lr 0.20000  4.1 min
+   test loss 3.694   (best so far 3.694)
+step 17100  train loss 3.272  lr 0.20000  4.1 min
+step 17200  train loss 3.222  lr 0.20000  4.1 min
+step 17300  train loss 3.287  lr 0.20000  4.1 min
+step 17400  train loss 3.241  lr 0.20000  4.2 min
+step 17500  train loss 3.194  lr 0.20000  4.2 min
+step 17600  train loss 3.204  lr 0.20000  4.2 min
+step 17700  train loss 3.220  lr 0.20000  4.2 min
+step 17800  train loss 3.298  lr 0.20000  4.3 min
+step 17900  train loss 3.168  lr 0.20000  4.3 min
+step 18000  train loss 3.281  lr 0.20000  4.3 min
+   test loss 3.647   (best so far 3.647)
+step 18100  train loss 3.340  lr 0.20000  4.3 min
+step 18200  train loss 3.221  lr 0.20000  4.4 min
+step 18300  train loss 3.155  lr 0.20000  4.4 min
+step 18400  train loss 3.124  lr 0.20000  4.4 min
+step 18500  train loss 3.247  lr 0.20000  4.4 min
+step 18600  train loss 3.206  lr 0.20000  4.4 min
+step 18700  train loss 3.177  lr 0.20000  4.5 min
+step 18800  train loss 3.114  lr 0.20000  4.5 min
+step 18900  train loss 3.199  lr 0.20000  4.5 min
+step 19000  train loss 3.130  lr 0.20000  4.5 min
+   test loss 3.648   (best so far 3.647)
+step 19100  train loss 3.200  lr 0.20000  4.6 min
+step 19200  train loss 3.260  lr 0.20000  4.6 min
+step 19300  train loss 3.140  lr 0.20000  4.6 min
+step 19400  train loss 3.213  lr 0.20000  4.6 min
+step 19500  train loss 3.154  lr 0.20000  4.6 min
+step 19600  train loss 3.170  lr 0.20000  4.7 min
+step 19700  train loss 3.225  lr 0.20000  4.7 min
+step 19800  train loss 3.150  lr 0.20000  4.7 min
+step 19900  train loss 3.112  lr 0.20000  4.7 min
+step 20000  train loss 3.230  lr 0.20000  4.8 min
+   test loss 3.605   (best so far 3.605)
+
+done in 4.8 minutes. final test loss 3.605, best 3.605
+
+Once upon a time, there was a little boy named Tom. Tim loved to play together. It had a special day he would would know a long friend. One day playing named Tim went with his mom. Tim was very sad because he could not see the bad too. Tim was sad.
+Tim saw a big, but he would not know what to do. He was sad. He wanted to help him. He asked Sue him for
+
+Tom and Sam went to the park. They liked to jump and read his house. It was a fun day, so he could not make one of the ugly birds.
+One day, Lily found a special flower and ran in the tree. She showed her how fast to her mom. She saw her mom and her mom was happy and said, "Thank you for you for help my toys. You found the cookie and started an idea.
+
+The little cat was sad because the big bird was too heavy. "I don't know it is very good for his friend. I have to put it on his mom and her. They knew new bone had to make it safe. One day, it made a great time. The bird thought about it. Amy said, "I can have it in a whole day. You can make some cookies so much fun?" she asked her

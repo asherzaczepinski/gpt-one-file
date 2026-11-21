@@ -20,7 +20,9 @@ references below). Asher is rebuilding it step by step in `main.py` so they unde
 | `../main3.py` | **Claude** | **The complete program that trains**, written in the style of Asher's `main.py`: plain top-level code, short `#we ...` comments, nothing fancy. Six blocks. **No separate attention/mlp/block functions**: each block's code is written inline in one loop (block1 → block2 → … → block6), and the backward pass is the same loop in reverse. The only helpers are the small math ones (`layer_norm`, `linear`, `softmax`, `gelu` and their backwards). Running it trains (about 3,000 steps) and then writes 3 stories. No save/load. If you change the math, gradient-check it on a tiny model first. |
 | `../main4.py` | **Claude** | An exact copy of Asher's current `main.py` plus **just the next step**, in Asher's style (short `#` comments, inline, no new functions). When Asher asks for the next step, re-copy `main.py` and add one step. |
 | `../main_functionized.py` | **Claude** | Asher's `main.py`, **with Asher's own comments kept word for word**, turned into a `forward(window)` function so it's ready for backprop. All learned numbers are in one `params` dict (block1. … block6.), and every step returns a cache. It works on **one window at a time** (64, 128), like `main.py`, so Asher's shape comments stay true. No batch dimension yet. Same output as `main3.py`'s gradient-checked forward. |
-| `../main6.py` | **Claude** | `main_functionized.py` + **the backward pass, built one step at a time** (like `main4.py`). Each time Asher says keep going, add the next backward step in Asher's comment style, with a small numerical check where it helps. Step 1 is done: logits gradient = softmax − 1 at the right answer, ÷ 64. Next: back through the head linear. The finished version to compare against is `main3.py`'s backward. |
+| `../main6.py` | **Claude** | `main_functionized.py` + **the backward pass, built one step at a time** (like `main4.py`). Each time Asher says keep going, add the next backward step in Asher's comment style, with a small numerical check where it helps. **The full backward pass is built** (head → final norm → blocks 6..1 → embeddings) for one window (64, 128). It's gradient-checked on 7 arrays, and 30 plain gradient-descent steps (lr 0.2) on one window take the loss 8.46 → 3.7. Next: real training (random windows, maybe batches and Adam). The finished version to compare against is `main3.py`'s backward. |
+| `../main_functionized2.py` | **Claude (the only code file to edit for training work)** | `main_functionized.py` + real training (random windows, adam, schedule, clipping, weight decay, dropout, best-checkpoint saving, `write` mode). One core, run with `caffeinate -i nice -n 19`. Every change and run result is logged in `../main_functionized2_notes.txt`. |
+| `../main_functionized3.py` | **Claude** | `main_functionized2.py` for RunPod: cupy on GPU (numpy fallback), batched (B, 64, 128), float32 on GPU. Verified identical to mf2 on CPU. Setup: `../RUNPOD.txt` + `../runpod_setup.sh`. |
 | `README.md` (this file) | Claude | Keep the "Where Asher is" section up to date when a step is done or a decision changes. |
 | `../lessons/` | Claude, when asked | One explainer page per step (e.g. `bpe.html`). |
 
@@ -49,6 +51,7 @@ explicitly say to edit **main.py**.
   numbers in brackets.
 - **`~/Desktop/build-a-gpt-from-scratch.pdf`**: the book those section numbers refer to.
 - **`../lessons/bpe.html`**: the explainer page for step 2 (byte pair encoding).
+- **`../lessons/backprop.html`**: the three backprop rules (add, multiply, matrix multiply), the chain rule, why caches exist, and why the learning rate isn't learned. Interactive, with nudge checks.
 
 ## Where Asher is (keep this updated)
 

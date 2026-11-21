@@ -358,6 +358,48 @@ print(f"loss {loss:.3f}, random guessing would be {np.log(vocab_size):.3f}")   #
 #at every step it answers: "if this number went up a tiny bit, would the loss go up or down, and by how much?"
 #that answer is called the gradient. once every number in params has one, training nudges each number the
 #opposite way (downhill), so the loss goes down
+#
+#the one rule everything below uses (the chain rule): every step takes the gradient of its OUTPUT and turns it
+#into the gradient of its INPUT, then hands that back to the step before it. like passing blame back down a line
+#
+#how blame gets split at the 3 kinds of steps:
+#   y = a + b      a and b both get the full gradient of y (that's why residuals are easy)
+#   y = x @ w      x gets  (gradient of y) @ w.T      w gets  x.T @ (gradient of y)
+#   y = x * w      x gets  (gradient of y) * w        w gets  (gradient of y) * x
+#that's why we saved the caches: to split the blame on y = x @ w you need to know what x and w were
+
+
+#back through linear (y = vectors @ weights + bias)
+#   vectors get: gradient @ weights.T    (64, out) @ (out, in) -> (64, in)
+#   weights get: vectors.T @ gradient    (in, 64) @ (64, out) -> (in, out), same shape as weights
+#   bias gets:   gradient added up over the 64 tokens, since the same bias was added to every token
+def linear_backward(gradient, cache):
+    vectors, weights = cache
+    vectors_gradient = gradient @ weights.T
+    weights_gradient = vectors.T @ gradient
+    bias_gradient = gradient.sum(axis=0)
+    return vectors_gradient, weights_gradient, bias_gradient
+
+#back through layer norm
+#scale and shift are easy: shift was added (so it gets the gradient), scale was multiplied by normalized
+#the vectors part is trickier: layer norm subtracts the average and divides by the spread, so if you push every
+#number up together, or stretch them all together, layer norm just undoes it. so those parts get removed
+#from the gradient (the two .mean terms), then it's divided by the spread like forward did
+def layer_norm_backward(gradient, cache):
+    normalized, spread, scale = cache
+    scale_gradient = (gradient * normalized).sum(axis=0)
+    shift_gradient = gradient.sum(axis=0)
+    g = gradient * scale
+    vectors_gradient = (g - g.mean(axis=-1, keepdims=True) - normalized * (g * normalized).mean(axis=-1, keepdims=True)) / spread
+    return vectors_gradient, scale_gradient, shift_gradient
+
+#back through gelu: multiply by gelu's slope at each input (how steep the bend was right there)
+#positive inputs: slope about 1, so the gradient passes through. very negative: slope about 0, so it stops
+def gelu_backward(gradient, x):
+    t = np.tanh(0.7978845608 * (x + 0.044715 * x ** 3))
+    slope = 0.5 * (1 + t) + 0.5 * x * (1 - t ** 2) * 0.7978845608 * (1 + 3 * 0.044715 * x ** 2)
+    return gradient * slope
+
 
 def backward(logits, targets, cache):
     window, block_caches, final_cache, head_cache = cache
@@ -374,16 +416,100 @@ def backward(logits, targets, cache):
     logits_gradient[np.arange(len(targets)), targets] -= 1              # minus 1 at each spot's right answer
     logits_gradient = logits_gradient / len(targets)
 
-    return grads, logits_gradient
+    #step 2: back through the head (picking). now we know how to nudge each token's column in head_weights,
+    #and gradient becomes (64, 128): how each token's final vector should change
+    gradient, grads["head_weights"], grads["head_bias"] = linear_backward(logits_gradient, head_cache)
+
+    #step 3: back through the final layer norm
+    gradient, grads["final_layer_norm_scale"], grads["final_layer_norm_shift"] = layer_norm_backward(gradient, final_cache)
+
+    #step 4: back through the blocks, block 6 first, down to block 1
+    #inside each block it's the forward steps backwards: mlp first, then attention
+    for i in reversed(range(number_of_blocks)):
+        b = f"block{i + 1}."
+        cache = block_caches[i]
+        queries, keys, values, weights = cache["queries"], cache["keys"], cache["values"], cache["weights"]
+
+        # --- back through the mlp ---
+        #forward was: vectors = vectors + mlp_output. the + means gradient goes straight to the vectors below
+        #AND into the mlp. we work out the mlp's part here and add it on at the end
+        mlp_gradient, grads[b + "shrink_weights"], grads[b + "shrink_bias"] = linear_backward(gradient, cache["shrink"])
+        mlp_gradient = gelu_backward(mlp_gradient, cache["wide"])
+        mlp_gradient, grads[b + "expand_weights"], grads[b + "expand_bias"] = linear_backward(mlp_gradient, cache["expand"])
+        mlp_gradient, grads[b + "layer_norm2_scale"], grads[b + "layer_norm2_shift"] = layer_norm_backward(mlp_gradient, cache["layer_norm2"])
+        gradient = gradient + mlp_gradient     # the two paths from the + join back up
+
+        # --- back through attention ---
+        #same deal: vectors = vectors + attention_output, so gradient also goes straight down
+        attention_gradient, grads[b + "output_weights"], grads[b + "output_bias"] = linear_backward(gradient, cache["output"])
+
+        #un-glue the heads: (64, 128) -> (64, 4, 32) -> (4, 64, 32), the same cut as forward
+        attention_gradient = attention_gradient.reshape(len(window), number_of_heads, head_size).transpose(1, 0, 2)
+
+        #forward was gathered = weights @ values (y = x @ w), so:
+        weights_gradient = attention_gradient @ values.transpose(0, 2, 1)   # (4, 64, 64): how each weight should change
+        values_gradient = weights.transpose(0, 2, 1) @ attention_gradient   # (4, 64, 32): how each value should change
+
+        #back through softmax: a weight going up means the others in its row go down (they have to add to 1),
+        #so subtract off that row's share. then divide by sqrt(32) like forward did
+        #hidden future spots had weight 0, so they get 0 gradient here, the mask needs no backward of its own
+        scores_gradient = weights * (weights_gradient - (weights_gradient * weights).sum(axis=-1, keepdims=True)) / np.sqrt(head_size)
+
+        #forward was scores = queries @ keys.T, so (y = x @ w again):
+        queries_gradient = scores_gradient @ keys                          # (4, 64, 32)
+        keys_gradient = scores_gradient.transpose(0, 2, 1) @ queries       # (4, 64, 32)
+
+        #glue each one's heads back to (64, 128) and put q, k, v side by side, the way they came out of qkv
+        attention_gradient = np.concatenate([
+            queries_gradient.transpose(1, 0, 2).reshape(len(window), embedding_size),
+            keys_gradient.transpose(1, 0, 2).reshape(len(window), embedding_size),
+            values_gradient.transpose(1, 0, 2).reshape(len(window), embedding_size),
+        ], axis=-1)                                                        # (64, 384)
+
+        attention_gradient, grads[b + "qkv_weights"], grads[b + "qkv_bias"] = linear_backward(attention_gradient, cache["qkv"])
+        attention_gradient, grads[b + "layer_norm_scale"], grads[b + "layer_norm_shift"] = layer_norm_backward(attention_gradient, cache["layer_norm"])
+        gradient = gradient + attention_gradient    # the two paths join back up again
+
+    #step 5: the embedding tables, the very bottom
+    #forward was vectors = token_embedding_table[window] + position_embedding_table[:64]
+    #so each token's gradient goes to its row in the token table. np.add.at so a token that shows up twice in the
+    #window gets BOTH pushes added up (a plain += would only keep one). rows not in the window get 0
+    grads["token_embedding_table"] = np.zeros_like(params["token_embedding_table"])
+    np.add.at(grads["token_embedding_table"], window, gradient)
+    #position t gets the gradient from spot t
+    grads["position_embedding_table"] = np.zeros_like(params["position_embedding_table"])
+    grads["position_embedding_table"][:len(window)] = gradient
+
+    return grads
 
 
-grads, logits_gradient = backward(logits, targets, cache)
-print(logits_gradient.shape)    # (64, 4841): one number per score, same shape as logits
+grads = backward(logits, targets, cache)
+print(len(grads), "gradients, one for every array in params:", len(params))
 
-#check it: nudge one logit up a tiny bit and see how much the loss actually changes
-#if our formula is right, (change in loss) / (size of nudge) should equal the gradient we worked out
-nudge = 1e-5
-nudged = logits.copy()
-nudged[0, targets[0]] += nudge
-measured = (get_loss(nudged, targets) - loss) / nudge
-print(f"gradient from formula {logits_gradient[0, targets[0]]:.6f}, measured {measured:.6f}")   # should match
+#check it: for a few arrays, nudge one number up a tiny bit and down a tiny bit, and measure how much the loss
+#actually changes. if backprop is right, that measured slope matches the gradient it worked out
+for name in ["head_weights", "final_layer_norm_scale", "block6.shrink_weights", "block3.qkv_weights",
+             "block1.layer_norm_scale", "position_embedding_table", "token_embedding_table"]:
+    spot = np.unravel_index(np.abs(grads[name]).argmax(), grads[name].shape)   # the number with the biggest gradient
+    original = params[name][spot]
+    params[name][spot] = original + 1e-5
+    loss_up = get_loss(forward(window)[0], targets)
+    params[name][spot] = original - 1e-5
+    loss_down = get_loss(forward(window)[0], targets)
+    params[name][spot] = original
+    measured = (loss_up - loss_down) / 2e-5
+    print(f"{name:28s} backprop {grads[name][spot]: .8f}   measured {measured: .8f}")
+
+#and the payoff: nudge every number a little downhill, over and over, on this one window. the loss should drop
+#(this is just to see backprop working. real training uses lots of different windows, so it learns stories
+#instead of memorizing one)
+#0.2 = how big each nudge is (the learning rate). too big (try 0.5) and the loss jumps around instead of going down
+learning_rate = 0.2
+for step in range(30):
+    logits, cache = forward(window)
+    loss = get_loss(logits, targets)
+    grads = backward(logits, targets, cache)
+    for name in params:
+        params[name] -= learning_rate * grads[name]
+    if step % 5 == 0:
+        print(f"step {step}  loss {loss:.3f}")

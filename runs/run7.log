@@ -1,0 +1,47 @@
+(64, 4841)
+loss 8.463, random guessing would be 8.485
+
+run7: 5000 steps, 16 windows per step, lr 0.003, adam True, warmup 100, cosine True, clip 1.0, weight decay 0.0
+test loss before training: 8.510
+step 100  train loss 6.047  lr 0.00300  0.4 min
+step 200  train loss 4.250  lr 0.00300  0.7 min
+   test loss 4.194   (best so far 4.194)
+step 300  train loss 3.955  lr 0.00299  1.1 min
+step 400  train loss 3.786  lr 0.00297  1.4 min
+step 500  train loss 3.628  lr 0.00295  1.8 min
+   test loss 3.931   (best so far 3.931)
+step 600  train loss 3.499  lr 0.00292  2.1 min
+step 700  train loss 3.403  lr 0.00289  2.5 min
+   test loss 3.772   (best so far 3.772)
+step 800  train loss 3.319  lr 0.00285  2.8 min
+step 900  train loss 3.264  lr 0.00281  3.2 min
+step 1000  train loss 3.190  lr 0.00276  13.7 min
+   test loss 3.727   (best so far 3.727)
+step 1100  train loss 3.137  lr 0.00270  15.8 min
+step 1200  train loss 3.080  lr 0.00264  16.4 min
+   test loss 3.617   (best so far 3.617)
+step 1300  train loss 3.043  lr 0.00258  17.1 min
+step 1400  train loss 2.987  lr 0.00251  18.9 min
+step 1500  train loss 2.922  lr 0.00244  19.9 min
+   test loss 3.545   (best so far 3.545)
+step 1600  train loss 2.887  lr 0.00236  21.7 min
+step 1700  train loss 2.829  lr 0.00228  27.4 min
+   test loss 3.570   (best so far 3.545)
+step 1800  train loss 2.831  lr 0.00219  31.8 min
+step 1900  train loss 2.772  lr 0.00211  41.0 min
+step 2000  train loss 2.729  lr 0.00202  51.1 min
+   test loss 3.539   (best so far 3.539)
+   test loss 3.539   (best so far 3.539)
+stopping early: past 60 minutes
+
+done in 64.5 minutes. final test loss 3.539, best 3.539
+
+Once upon a time, there was a big, there. In this house, there lived a man named Fluffy. Spot loved to play a game with his friends. Spot liked to jump all day. One day, Spot saw a big tree. He wanted to explain, but he thought it was too high. The nice bird was a little boy. He thought it was easy to do it.
+Max tried to push the celery too.
+
+Tom and Sam went to the park. They ran to fix the ball.
+As they met a big dog named Max. Max said, "Why are you!" Spot said the dog, "I will help you find my big stick." They looked under the tree and saw a strong red ball. Spot and Max were so sad.
+Then, a new ball came over the tree. They ran to the orange tree and it could tree. Tim
+
+The little cat was sad because it was too small. He said, "I am a big dog. Can we try to help me find my toy?" He asked the house, "Yes, let's play with me." So, they asked the cat, "Yes, I can help you."
+So, there was a big dog. The dog was a happy dog. The dog said, "I am looking at this park."
