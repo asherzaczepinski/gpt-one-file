@@ -1,0 +1,287 @@
+{
+  "intro": [
+    "A CPU, the main chip in a laptop, has a handful of very fast cores. A GPU has **thousands** of small, simpler ones. Training a GPT is almost entirely matrix multiplication, and a matrix multiply is millions of separate multiply-and-add jobs that don't depend on each other, so a GPU can hand a slice to each core and do them all at the same time. The catch: every GPU operation has a small startup cost, so a GPU only pays off when each operation is a **big chunk of work**. Hand it one tiny piece at a time and most of those cores sit idle.",
+    "**CuPy** is a Python library that copies NumPy's API (same function names, same arguments, same shapes) but keeps every array in the memory of an NVIDIA GPU and runs every operation there through CUDA, NVIDIA's system for GPU code. That is why the GPU version of this GPT looks almost the same as the NumPy one: most changes are `np.` becoming `xp.`, plus a batch dimension so the GPU gets enough work at once.",
+    "The math is **identical**. The GPU file was checked numerically against the NumPy version: it gives the same logits, its gradients matched to about 5e-15 when run in float64 mode, and it reaches the same test losses. The payoff showed up in the real training run. The NumPy version, on one core of a MacBook M4, managed about 3,700 to 6,800 tokens per second. On a rented RunPod GPU the CuPy code processed 26,944 tokens per second, and it did that with a bigger model (256 numbers per token instead of 128, and 128 tokens of context instead of 64)."
+  ],
+  "concepts": [
+    {
+      "title": "One name, two libraries: the xp switch",
+      "explain": [
+        "At the top of the file, the program tries to `import cupy as xp`. If that works, `xp` is CuPy and every `xp.` call runs on the GPU. If CuPy isn't installed (on a Mac, for example), the `except ImportError` branch sets `xp = np`, so the exact same lines run on plain NumPy instead.",
+        "The rest of the program never has to ask which one it got. It just writes `xp.exp`, `xp.sqrt`, `xp.zeros_like` and so on. A flag called `on_gpu` remembers the choice for the few places that really are different.",
+        "Plain `np` doesn't disappear. It still handles the jobs that stay on the CPU: building the token ids, picking random windows, and rolling the dice when writing a story."
+      ]
+    },
+    {
+      "title": "Batching: many windows at once",
+      "explain": [
+        "The NumPy version works on **one window** of 64 tokens at a time, so its arrays look like (64, 128). That is far too little work to keep a GPU busy. The CuPy version takes a stack of B windows, shape (B, 64), so every array grows a B in front: (64, 128) becomes (B, 64, 128).",
+        "Most of the math doesn't need to change for this. NumPy and CuPy apply `@`, `+` and `exp` across the extra leading axis automatically, so one matrix multiply now does the work for all B windows. What does change is anything that counts axes (the transposes) and anything that adds things up for a gradient (those now add over every window too).",
+        "The training loop used to run 16 separate windows and average their gradients. Now it stacks the same 16 windows into one batch and runs forward and backward once. Because the loss is an average either way, one batch of 16 gives exactly the same gradient as averaging 16 separate ones."
+      ]
+    },
+    {
+      "title": "float32 on the GPU, float64 on the CPU",
+      "explain": [
+        "NumPy uses 64-bit numbers (float64) by default. Most GPUs, including the RTX 2000 Ada this model trained on, do 32-bit math (float32) many times faster, and float32 arrays take half the memory. So the file picks `dtype = xp.float32 if on_gpu else np.float64`.",
+        "float32 keeps about 7 significant digits instead of about 16. For training a neural network that small rounding difference doesn't matter. On the CPU the file keeps float64, which is what made the extremely close comparison against the NumPy version possible.",
+        "A couple of lines exist only to stop float32 from quietly turning back into float64, for example making the -1e9 mask value in the same type as the scores."
+      ]
+    },
+    {
+      "title": "scatter_add: adding into rows, even repeated ones",
+      "explain": [
+        "At the very bottom of the backward pass, each token's gradient has to be added into that token's row of the embedding table. If the word \" the\" shows up five times in a batch, its row has to receive all five pushes. A plain `table[ids] += gradient` would keep only one of them.",
+        "NumPy's tool for this is `np.add.at`, which doesn't work on GPU arrays. CuPy's version is `cupyx.scatter_add`. The file picks one at the top (`scatter_add = cupyx.scatter_add if on_gpu else np.add.at`) and calls `scatter_add(...)` in the backward pass, so the same line works either way."
+      ]
+    },
+    {
+      "title": "Two memories: moving data between CPU and GPU",
+      "explain": [
+        "A GPU has its own memory, separate from the computer's normal RAM. A CuPy array lives there, and plain NumPy can't read it. `xp.asarray(a)` copies a NumPy array onto the GPU. `a.get()` copies a CuPy array back. The file wraps that in a small helper, `to_cpu(a)`, which calls `.get()` on the GPU and just returns the array on the CPU.",
+        "Copying is slow compared to math, so it happens as rarely as possible: the learned numbers are copied to the GPU once at the start, each batch of token ids is copied over once per step, and things only come back when they have to (saving the model with pickle, picking the next token when writing, or turning a single loss number into a Python `float`).",
+        "There is one more effect. Python hands work to the GPU and keeps going without waiting. It only waits when it needs an actual number back, such as `float(...)` on the loss. So those copy-back points are also the moments where the program waits for the GPU to catch up."
+      ]
+    },
+    {
+      "title": "Why the CPU fallback is handy",
+      "explain": [
+        "Because `xp` falls back to NumPy, the GPU file runs on any laptop with no NVIDIA card. That means it can be tested at home before paying for GPU time, and mistakes show up for free instead of on a rented machine.",
+        "It also made checking possible. Running the CuPy file in CPU mode (NumPy, float64) and the original NumPy file side by side on the same windows gave the same logits and gradients that agreed to about 5e-15, which shows the batching changes didn't alter the math. Only after that does it make sense to switch to float32 on a real GPU.",
+        "The model it saves is also plain NumPy (every array goes through `to_cpu` first), so a model trained on the GPU loads fine on a Mac."
+      ]
+    }
+  ],
+  "changes": [
+    {
+      "title": "Pick the library at the top",
+      "why": [
+        "The NumPy version simply imports NumPy. The CuPy version tries to import CuPy as `xp`, and falls back to NumPy if that fails. Every later `xp.` call depends on this one choice.",
+        "`cupyx` is imported too, because it holds `scatter_add`, which the backward pass needs."
+      ],
+      "numpy": "import pickle\nimport numpy as np",
+      "cuda": "try:\n    import cupy as xp\n    import cupyx\n    on_gpu = True\nexcept ImportError:\n    xp = np\n    on_gpu = False"
+    },
+    {
+      "title": "Copy every learned number onto the GPU",
+      "why": [
+        "The starting weights are still made by NumPy's random generator with the same seed, so they are exactly the same numbers as in the NumPy version. Then one line copies the whole `params` dict into GPU memory, in float32 on a GPU (float64 otherwise). From here on every learned number lives on the GPU."
+      ],
+      "numpy": "params[\"head_bias\"] = np.zeros(vocab_size)",
+      "cuda": "params[\"head_bias\"] = np.zeros(vocab_size)\n\n#copy every learned number into the gpu's memory (as float32 there). from here on, params lives on the gpu\nparams = {name: xp.asarray(a, dtype=dtype) for name, a in params.items()}"
+    },
+    {
+      "title": "np. becomes xp. in the math",
+      "why": [
+        "A NumPy function can't read an array that lives on the GPU, so every math function that touches the model's arrays switches to the `xp` version. On a GPU that is CuPy's function with the same name and arguments.",
+        "The same one-word change repeats all over the file: `exp` in softmax, `tanh` in gelu and its backward, `log` in the loss, `split`, `triu`, `where`, `concatenate`, `arange`, `mean`, and `zeros_like` for the gradients and Adam's memories."
+      ],
+      "numpy": "    spread = np.sqrt(variance + tiny)",
+      "cuda": "    spread = xp.sqrt(variance + tiny)"
+    },
+    {
+      "title": "forward() takes a batch of windows",
+      "why": [
+        "Instead of one window of token ids, forward now gets a grid of them, shape (B, 64). It reads off B (how many windows) and T (how many tokens per window) once, and uses them everywhere the NumPy version used `len(window)`."
+      ],
+      "numpy": "def forward(window):",
+      "cuda": "def forward(windows):\n    #windows is (B, 64): B windows at once (a gpu is only fast when it gets big chunks of work). every shape has a B in front now\n    B, T = windows.shape"
+    },
+    {
+      "title": "Embedding lookup for every window at once",
+      "why": [
+        "Indexing the embedding table with a (B, 64) grid of ids gives back a (B, 64, 128) block of vectors, one row per token per window. The position table is still only (64, 128), and adding it lines up with the last two axes, so the same positions get added to every window automatically."
+      ],
+      "numpy": "    vectors = params[\"token_embedding_table\"][window] + params[\"position_embedding_table\"][:len(window)]",
+      "cuda": "    vectors = params[\"token_embedding_table\"][windows] + params[\"position_embedding_table\"][:T]"
+    },
+    {
+      "title": "Cutting into heads with an extra axis",
+      "why": [
+        "The NumPy version turns (64, 128) into (64, 4, 32) and then (4, 64, 32). With a batch in front it is (B, 64, 128) into (B, 64, 4, 32) and then (B, 4, 64, 32). The batch axis stays first, so the transpose order shifts: `(1, 0, 2)` becomes `(0, 2, 1, 3)`.",
+        "The same reshape-and-transpose change appears again in the backward pass (un-gluing the heads), and the reverse (gluing heads back together) changes from `.transpose(1, 0, 2)` to `.transpose(0, 2, 1, 3)` in forward and three times in backward."
+      ],
+      "numpy": "        queries = queries.reshape(len(window), number_of_heads, head_size).transpose(1, 0, 2)\n        keys = keys.reshape(len(window), number_of_heads, head_size).transpose(1, 0, 2)\n        values = values.reshape(len(window), number_of_heads, head_size).transpose(1, 0, 2)",
+      "cuda": "        queries = queries.reshape(B, T, number_of_heads, head_size).transpose(0, 2, 1, 3)\n        keys = keys.reshape(B, T, number_of_heads, head_size).transpose(0, 2, 1, 3)\n        values = values.reshape(B, T, number_of_heads, head_size).transpose(0, 2, 1, 3)"
+    },
+    {
+      "title": "Attention scores: flip the last two of four axes",
+      "why": [
+        "To line up queries with keys, the keys get their last two axes swapped. With 3 axes that was `transpose(0, 2, 1)`. With 4 axes it is `transpose(0, 1, 3, 2)`: keep the batch and head axes, swap tokens and numbers. The same change shows up in the backward pass for the values, weights and scores gradients.",
+        "`np.sqrt(head_size)` becomes `math.sqrt(head_size)`. The square root of 32 is just one ordinary number, so it doesn't need the GPU, and a plain Python number takes on the array's type instead of risking a float64 result."
+      ],
+      "numpy": "        scores = queries @ keys.transpose(0, 2, 1) / np.sqrt(head_size)",
+      "cuda": "        scores = queries @ keys.transpose(0, 1, 3, 2) / math.sqrt(head_size)"
+    },
+    {
+      "title": "Masking the future without changing the number type",
+      "why": [
+        "The mask still puts -1e9 in every future spot. The CuPy version builds that -1e9 with the same type as the scores (`dtype=scores.dtype`), so the result stays float32 on the GPU instead of risking a switch to float64.",
+        "The mask itself, built one line earlier with `xp.triu`, is still (64, 64). It broadcasts across every window and every head."
+      ],
+      "numpy": "        scores = np.where(future, -1e9, scores)",
+      "cuda": "        scores = xp.where(future, xp.asarray(-1e9, dtype=scores.dtype), scores)"
+    },
+    {
+      "title": "get_loss: every spot in every window is one question",
+      "why": [
+        "Logits now come in as (B, 64, vocab) and targets as (B, 64). Reshaping them to (B*64, vocab) and (B*64,) turns the batch into one long list of next-token questions, and then the rest of the loss is the same math as before, averaged over all of them."
+      ],
+      "numpy": "def get_loss(logits, targets):\n    #subtract each row's biggest score from that whole row\n    shifted = logits - logits.max(axis=-1, keepdims=True)",
+      "cuda": "def get_loss(logits, targets):\n    #(B, 64, 4841) -> (B*64, 4841): every spot in every window is its own question\n    logits, targets = logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)\n    #subtract each row's biggest score from that whole row\n    shifted = logits - logits.max(axis=-1, keepdims=True)"
+    },
+    {
+      "title": "The quick test run becomes a batch of 1",
+      "why": [
+        "forward now expects a batch, so the single test window is wrapped with `[None]`, which adds an axis of size 1: (64,) becomes (1, 64). `xp.asarray` then copies it onto the GPU."
+      ],
+      "numpy": "window = token_ids[:context_length]\ntargets = token_ids[1:context_length + 1]",
+      "cuda": "window = xp.asarray(token_ids[:context_length][None])          # a batch of 1 window, (1, 64), copied to the gpu\ntargets = xp.asarray(token_ids[1:context_length + 1][None])"
+    },
+    {
+      "title": "linear_backward: flatten before adding up",
+      "why": [
+        "A weight is used by every token in every window, so its gradient has to add up the blame from all of them. Flattening (B, 64, in) into (B*64, in) makes each token one row, and then the familiar rule `vectors.T @ gradient` does that adding for free. The bias sum works the same way.",
+        "The gradient for the vectors, `gradient @ weights.T`, doesn't change at all: `@` already works across the batch axis."
+      ],
+      "numpy": "    vectors, weights = cache\n    vectors_gradient = gradient @ weights.T\n    weights_gradient = vectors.T @ gradient\n    bias_gradient = gradient.sum(axis=0)",
+      "cuda": "    vectors, weights = cache\n    #flatten the batch so every token in every window is one row: (B, 64, in) -> (B*64, in)\n    flat_vectors = vectors.reshape(-1, vectors.shape[-1])\n    flat_gradient = gradient.reshape(-1, gradient.shape[-1])\n    vectors_gradient = gradient @ weights.T\n    weights_gradient = flat_vectors.T @ flat_gradient\n    bias_gradient = flat_gradient.sum(axis=0)"
+    },
+    {
+      "title": "layer_norm_backward: same flatten for scale and shift",
+      "why": [
+        "Layer norm's scale and shift are shared by every token in every window, so their gradients are added over all B*64 tokens. Reshaping to (B*64, D) before `.sum(axis=0)` does that. The long line for the vectors' gradient works on the last axis only, so it stays exactly the same."
+      ],
+      "numpy": "    scale_gradient = (gradient * normalized).sum(axis=0)\n    shift_gradient = gradient.sum(axis=0)",
+      "cuda": "    D = normalized.shape[-1]\n    scale_gradient = (gradient * normalized).reshape(-1, D).sum(axis=0)     # added up over every token in every window\n    shift_gradient = gradient.reshape(-1, D).sum(axis=0)"
+    },
+    {
+      "title": "The first gradient, on the flattened logits",
+      "why": [
+        "The gradient of the loss is still \"the guessed probabilities, minus 1 at the right answer, divided by how many spots there are\". It is worked out on the flattened (B*64, vocab) version, divided by B*64 because the loss averaged over that many spots, then reshaped back to (B, 64, vocab) for the rest of backward."
+      ],
+      "numpy": "    logits_gradient = softmax(logits)                                   # (64, 4841): its guessed probabilities\n    logits_gradient[np.arange(len(targets)), targets] -= 1              # minus 1 at each spot's right answer\n    logits_gradient = logits_gradient / len(targets)",
+      "cuda": "    flat_targets = targets.reshape(-1)                                  # every spot in every window, in one list\n    logits_gradient = softmax(logits.reshape(-1, logits.shape[-1]))     # (B*64, 4841): its guessed probabilities\n    logits_gradient[xp.arange(len(flat_targets)), flat_targets] -= 1    # minus 1 at each spot's right answer\n    logits_gradient = (logits_gradient / len(flat_targets)).reshape(logits.shape)"
+    },
+    {
+      "title": "np.add.at becomes scatter_add",
+      "why": [
+        "Each token's gradient is added into its row of the embedding table, and a token that appears more than once must get every push added. `np.add.at` does that on the CPU but can't touch GPU memory. `scatter_add` was set at the top to `cupyx.scatter_add` on the GPU and `np.add.at` on the CPU, so this one line works on both. It now takes the whole (B, 64) grid of ids."
+      ],
+      "numpy": "    grads[\"token_embedding_table\"] = np.zeros_like(params[\"token_embedding_table\"])\n    np.add.at(grads[\"token_embedding_table\"], window, gradient)",
+      "cuda": "    grads[\"token_embedding_table\"] = xp.zeros_like(params[\"token_embedding_table\"])\n    scatter_add(grads[\"token_embedding_table\"], windows, gradient)"
+    },
+    {
+      "title": "Position gradients add up over the batch",
+      "why": [
+        "Position 5 was used once in every window, so its gradient is the sum of the gradients at spot 5 across all B windows. `gradient.sum(axis=0)` adds over the batch axis, turning (B, 64, 128) into (64, 128)."
+      ],
+      "numpy": "    grads[\"position_embedding_table\"][:len(window)] = gradient",
+      "cuda": "    grads[\"position_embedding_table\"][:T] = gradient.sum(axis=0)     # position t: added up over every window"
+    },
+    {
+      "title": "test_loss: 50 windows in one forward",
+      "why": [
+        "The same 50 test windows (same seed 123) are picked on the CPU, stacked into one (50, 64) grid with `np.stack`, copied to the GPU, and run through forward once. The NumPy version averaged 50 separate losses; since every window has the same number of tokens, one loss averaged over the whole batch is the same number."
+      ],
+      "numpy": "    losses = []\n    for _ in range(50):\n        test_window, test_targets = random_window(test_ids, test_generator)\n        losses.append(get_loss(forward(test_window)[0], test_targets))\n    return np.mean(losses)",
+      "cuda": "    #the same 50 windows as before, stacked into one (50, 64) batch and copied to the gpu, then one forward\n    pairs = [random_window(test_ids, test_generator) for _ in range(50)]\n    test_windows = xp.asarray(np.stack([w for w, t in pairs]))\n    test_targets = xp.asarray(np.stack([t for w, t in pairs]))\n    return get_loss(forward(test_windows)[0], test_targets)"
+    },
+    {
+      "title": "Training: one batch instead of a loop of 16",
+      "why": [
+        "This is where batching pays off. The NumPy version runs forward and backward 16 times per step and averages the gradients by hand. The CuPy version picks the same 16 windows in the same order (same random generator), stacks them into a (16, 64) batch, copies it to the GPU, and runs forward and backward once.",
+        "It gives exactly the same gradient, because the loss is an average either way, but the GPU gets 16 times more work per operation."
+      ],
+      "numpy": "    grads = {name: np.zeros_like(a) for name, a in params.items()}\n    for _ in range(windows_per_step):\n        window, targets = random_window(train_ids, train_generator)\n        logits, cache = forward(window)\n        window_grads = backward(logits, targets, cache)\n        for name in params:\n            grads[name] += window_grads[name] / windows_per_step",
+      "cuda": "    batch = [random_window(train_ids, train_generator) for _ in range(windows_per_step)]\n    windows = xp.asarray(np.stack([w for w, t in batch]))\n    targets = xp.asarray(np.stack([t for w, t in batch]))\n    logits, cache = forward(windows)\n    grads = backward(logits, targets, cache)"
+    },
+    {
+      "title": "Gradient clipping: bring the sums back as plain numbers",
+      "why": [
+        "Each `(g ** 2).sum()` is a single number that still lives on the GPU. `float(...)` copies it back to the CPU as an ordinary Python number, and `math.sqrt` takes the square root. The result, `length`, is then a normal number that the `if length > 1.0` check can use."
+      ],
+      "numpy": "    length = np.sqrt(sum((g ** 2).sum() for g in grads.values()))",
+      "cuda": "    length = math.sqrt(sum(float((g ** 2).sum()) for g in grads.values()))"
+    },
+    {
+      "title": "Saving: copy back to the CPU first",
+      "why": [
+        "The save file should hold plain NumPy arrays, so every learned number goes through `to_cpu` before `pickle.dump`. That also means a model trained on the GPU loads on a computer without one. The file name changes so the two versions don't overwrite each other."
+      ],
+      "numpy": "with open(current_path / \"main_functionized_model.pkl\", \"wb\") as file:\n    pickle.dump({\"params\": params, \"used_ids\": used_ids}, file)",
+      "cuda": "with open(current_path / \"main_functionized_cuda_model.pkl\", \"wb\") as file:\n    pickle.dump({\"params\": {name: to_cpu(a) for name, a in params.items()}, \"used_ids\": used_ids}, file)   # copied back to the cpu to save"
+    },
+    {
+      "title": "Writing a story: GPU for the model, CPU for the dice",
+      "why": [
+        "The last 64 tokens become a batch of 1 and go to the GPU for forward. Then only the last spot's scores come back with `to_cpu`, turned into float64. Picking one token is tiny work, and NumPy's random `choice` runs on the CPU, so the top-40 filter and the softmax are done right there with NumPy (`np.exp`), instead of with the `xp` softmax used inside the model."
+      ],
+      "numpy": "        recent = np.array(ids[-context_length:])                  # only the last 64 tokens fit\n        scores = forward(recent)[0][-1] / temperature              # the last spot's scores: the guess for what's next\n        scores = np.where(scores < np.sort(scores)[-top_k], -1e9, scores)   # everything worse than the 40th best -> 0 chance\n        probabilities = softmax(scores)",
+      "cuda": "        recent = xp.asarray(np.array([ids[-context_length:]]))     # only the last 64 tokens fit, as a batch of 1 on the gpu\n        scores = to_cpu(forward(recent)[0][0, -1]).astype(np.float64) / temperature   # the last spot's scores, back on the cpu\n        scores = np.where(scores < np.sort(scores)[-top_k], -1e9, scores)   # everything worse than the 40th best -> 0 chance\n        probabilities = np.exp(scores - scores.max())               # softmax, done with numpy since this part is on the cpu\n        probabilities = probabilities / probabilities.sum()"
+    }
+  ],
+  "trainer": {
+    "intro": [
+      "The model hosted on this site was trained by `runpod/train_tinystories.py`. Its forward and backward passes are copied straight from main_functionized_cuda.py. What changes is everything around them: a bigger model, far more text, and a training loop built around a clock instead of a fixed number of steps.",
+      "The run used a RunPod RTX 2000 Ada GPU, rented at $0.24 an hour. It read 97.5 million tokens of TinyStories (24,596 different tokens) and trained a model with 17.4 million learned numbers. At 0.152 seconds per step, about 26,944 tokens per second, it fit 87,619 steps into 222 minutes, roughly 3.7 passes through the training text. Test loss went from 10.15 to 1.545 and never went up along the way, so the model wasn't overfitting. The total bill was $0.93."
+    ],
+    "differences": [
+      {
+        "title": "A bigger model, set from outside the file",
+        "explain": [
+          "Every size setting is read from an environment variable, with a default if it isn't set. The defaults are what the real run used: 256 numbers per token (up from 128), 128 tokens of context (up from 64), 8 heads (up from 4), and 6 blocks. Training settings work the same way: 32 windows per step and a learning rate of 0.001.",
+          "This way the same file can be run small for a quick test or big for the real thing, just by changing the command that starts it, without editing the code."
+        ],
+        "code": "#how many numbers describe token\nembedding_size = int(os.environ.get(\"EMBEDDING_SIZE\", 256))\n#how many tokens it can see at once\ncontext_length = int(os.environ.get(\"CONTEXT_LENGTH\", 128))"
+      },
+      {
+        "title": "Tokenizing hundreds of megabytes in pieces",
+        "explain": [
+          "The original reads the whole text and keeps the token ids in a Python list. For roughly 400 MB of stories that would be about 100 million Python integers and several gigabytes of memory.",
+          "Instead the file is read about 4 MB at a time. Every 16 pieces are tokenized together on all the CPU's threads with tiktoken's `encode_ordinary_batch`, and each result is turned right away into a compact NumPy array of 32-bit integers. At the end the arrays are joined into one with `np.concatenate`."
+        ],
+        "code": "            chunk.append(block)\n            if len(chunk) == 16:\n                pieces += [np.array(t, dtype=np.int32) for t in encoding.encode_ordinary_batch(chunk, num_threads=os.cpu_count())]\n                chunk = []"
+      },
+      {
+        "title": "Renumbering tokens with np.unique",
+        "explain": [
+          "Like before, tiktoken's ids are renumbered so only the tokens that actually appear get a row in the embedding table. The original did this with a Python dict and a loop, which would be slow for 97.5 million tokens.",
+          "`np.unique(tokens, return_inverse=True)` does it in one call: it returns the distinct ids in sorted order, and for every token, its position in that sorted list, which is exactly the new small id. For TinyStories that gave 24,596 different tokens."
+        ],
+        "code": "used_ids, token_ids = np.unique(tokens, return_inverse=True)\nused_ids = [int(t) for t in used_ids]\nto_small = {big: small for small, big in enumerate(used_ids)}\ntoken_ids = token_ids.astype(np.int32)"
+      },
+      {
+        "title": "A 99/1 train and test split",
+        "explain": [
+          "The original holds back the last 10% of the text for testing. With this much text, 1% is still close to a million tokens, plenty for a fair test, so the trainer keeps 99% for training."
+        ],
+        "code": "cut = int(len(token_ids) * 0.99)\ntrain_ids, test_ids = token_ids[:cut], token_ids[cut:]"
+      },
+      {
+        "title": "Training on a time budget",
+        "explain": [
+          "A rented GPU costs money every minute, so instead of a fixed step count the script trains for `TRAIN_MINUTES`. The whole training step lives in a function, `one_step`. The script runs and times the first 30 steps, divides the budget by the time per step, and that becomes the planned total number of steps.",
+          "Knowing the total lets the learning rate schedule end right at the deadline. As a safety net, the loop also stops on its own if it runs more than 10% past the budget, in case steps slow down."
+        ],
+        "code": "t0 = time.time()\nfor step in range(30):\n    one_step(step, 10**9, train_generator)\nseconds_per_step = (time.time() - t0) / 30\ntotal_steps = max(31, int(train_minutes * 60 / seconds_per_step))"
+      },
+      {
+        "title": "Cosine down to 10%, not to 0",
+        "explain": [
+          "After a 200-step warmup, the learning rate slides down along a cosine curve like before, but it stops at 10% of the starting rate instead of reaching 0. The `min(1.0, ...)` and `max(1, ...)` are small safety guards, so the formula can never divide by zero or run past the end of the curve."
+        ],
+        "code": "        progress = min(1.0, (step - warmup_steps) / max(1, total_steps - warmup_steps))\n        step_size = learning_rate * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * progress)))   # slides down to 10%"
+      },
+      {
+        "title": "Saving the best model and writing stories",
+        "explain": [
+          "About 25 times during training, the script measures the test loss. Whenever it beats the best so far, it saves the model to `best_model.pkl`, along with the sizes it was built with, so the file can be loaded later without guessing the settings.",
+          "When training ends, it loads that best model back onto the GPU, writes a story for each of four prompts, and saves them to `stories.txt`."
+        ],
+        "code": "        current = test_loss()\n        if current < best:\n            best = current\n            save(out_folder / \"best_model.pkl\")"
+      }
+    ]
+  }
+}

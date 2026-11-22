@@ -46,7 +46,7 @@ def next_token_probabilities(ids, temperature=0.8, top_k=40):
 
 def generate(prompt, new_tokens=150, temperature=0.8, top_k=40, seed=0):
     write_generator = np.random.default_rng(seed)
-    ids = [to_small[t] for t in encoding.encode(prompt, allowed_special="all") if t in to_small]
+    ids = [to_small[t] for t in encoding.encode_ordinary(prompt) if t in to_small]
     for _ in range(new_tokens):
         probabilities = next_token_probabilities(ids, temperature, top_k)
         ids.append(int(write_generator.choice(vocab_size, p=probabilities)))

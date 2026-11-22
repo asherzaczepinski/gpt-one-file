@@ -1,0 +1,311 @@
+{
+  "file": "main_functionized.py",
+  "intro": [
+    "This is `main_functionized.py`, a complete GPT-style language model in one Python file. It reads a collection of short children's stories, learns to predict the next token, and then writes new stories of its own. The name comes from how it was built: the whole model is wrapped into a single `forward` function, so that the backward pass (the part that works out how to improve every number) can be written right next to it.",
+    "This is the learning version. It is small enough to train on a laptop CPU in a few minutes, using a `stories.txt` file of about 1 MB. The model has about 2.4 million learned numbers, and after training its loss on text it has never seen is about 3.48. There is no PyTorch and no automatic differentiation (autograd). Every piece, including backpropagation, the Adam optimizer and the learning-rate schedule, is written out by hand with NumPy arrays. The model works on one window at a time: 64 tokens, with each token described by 128 numbers.",
+    "To run it, install the two libraries (`pip install numpy tiktoken`), put a `stories.txt` file in the same folder, and run `python main_functionized.py`. It prints a quick check before training, then a test loss every 125 training steps. After that it saves the trained numbers to `main_functionized_model.pkl` and writes three short stories from three different prompts."
+  ],
+  "sections": [
+    {
+      "id": "imports",
+      "title": "Imports",
+      "lines": [1, 4],
+      "explain": [
+        "The program needs only four imports. `numpy` does all the math: every weight, every vector and every gradient is a NumPy array. `tiktoken` is OpenAI's tokenizer library, which chops text into tokens. `pathlib.Path` finds files next to the script, and `pickle` saves the trained model to disk at the very end.",
+        "Notice what is missing: there is no PyTorch, no TensorFlow, and nothing that computes gradients automatically. Everything a deep learning library would normally do for you is written out further down in this file."
+      ]
+    },
+    {
+      "id": "reading-and-tokenizing",
+      "title": "Reading and tokenizing the stories",
+      "lines": [9, 20],
+      "explain": [
+        "`current_path` is the folder this script lives in, so the program always looks for `stories.txt` right next to the file, no matter where you run it from.",
+        "A model can't read letters. It only works with numbers. A tokenizer splits text into tokens, which are common chunks such as whole words, pieces of words or punctuation, and gives each token an id number. This file uses `o200k_base`, the same encoding GPT-4o uses. For example, 'Once upon a time' becomes four tokens: 'Once', ' upon', ' a', ' time'. Notice that the space in front of a word is part of its token.",
+        "`tokenize` reads the whole file as one string and returns a plain Python list of ids, one for each token in the stories."
+      ]
+    },
+    {
+      "id": "renumbering",
+      "title": "Renumbering the token ids",
+      "lines": [22, 25],
+      "explain": [
+        "`o200k_base` knows about 200,000 different tokens, but simple children's stories use only a few thousand of them. If the model kept room for all 200,000, its biggest tables would be almost entirely rows for tokens that never appear.",
+        "So the code collects the ids that actually show up (`used_ids`, sorted from smallest to largest) and gives them new ids 0, 1, 2, and so on, in that order. `to_small` maps each big tiktoken id to its new small id. For example, if the used ids were [13, 290, 1001], they would become 0, 1, 2. `token_ids` is the whole text rewritten in small ids, stored as a NumPy array.",
+        "`vocab_size` is the number of different tokens the model can read and predict. The comments in the code put it at 4,841 for this stories file. `used_ids` is kept for later: it turns the small ids the model generates back into tiktoken ids, so they can be decoded into text."
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Model size settings",
+      "lines": [27, 39],
+      "explain": [
+        "These numbers set the shape of the whole model. `embedding_size = 128` means each token is described by a list of 128 numbers. `context_length = 64` means the model reads 64 tokens at a time, so one window is a (64, 128) grid of numbers.",
+        "Attention is split into `number_of_heads = 4` heads. Each head gets `head_size = 128 // 4 = 32` numbers per token, so each head can learn to look for something different. `number_of_blocks = 6` stacks six identical transformer blocks, where each block's output is the next block's input.",
+        "`random_generator` is a NumPy random number generator with a fixed seed of 0, so the starting weights come out exactly the same on every run."
+      ]
+    },
+    {
+      "id": "params",
+      "title": "Creating every learned number",
+      "lines": [42, 67],
+      "explain": [
+        "Every number the model learns lives in one dictionary called `params`. Keeping them all together has a payoff later: the backward pass can build a gradient dictionary with the same names, and the optimizer can loop over both dictionaries together.",
+        "The two embedding tables come first. `token_embedding_table` is (vocab_size, 128), with one row of 128 numbers per token. `position_embedding_table` is (64, 128), with one row per spot in the window, so the model can tell the first token in the window apart from the tenth.",
+        "Each of the 6 blocks gets its own set of weights, named `block1.qkv_weights` through `block6.qkv_weights` and so on. A block has two layer norms (scale starts at 1, shift starts at 0), the attention weights (`qkv_weights` is (128, 384) and `output_weights` is (128, 128)), and the MLP weights (`expand_weights` is (128, 512) and `shrink_weights` is (512, 128)). `qkv_weights` is 384 wide because it holds the query, key and value weights side by side. After the blocks come a final layer norm and `head_weights`, which is (128, vocab_size). The head turns a token's vector into a score for every token in the vocabulary.",
+        "Weight matrices start as small random numbers (drawn from a normal distribution with standard deviation 0.02), and biases start at zero. The randomness matters. If every weight started out equal, every detector would compute the same thing and keep learning the same thing. All together, this comes to about 2.4 million numbers."
+      ]
+    },
+    {
+      "id": "layer-norm",
+      "title": "Layer norm",
+      "lines": [70, 80],
+      "explain": [
+        "The comment at the top introduces the cache: the things a step saves on the way forward so that the backward pass can use them later.",
+        "Layer norm keeps each token's 128 numbers in a steady range. For each row, it subtracts the average and divides by the spread (the standard deviation), so the row ends up with an average of 0 and a spread of 1. For example, [2, 4, 6] has an average of 4 and a spread of about 1.63, so it becomes about [-1.22, 0, 1.22]. Then it multiplies by a learned `scale` and adds a learned `shift`, so the model can adjust or undo the normalizing if that turns out to help.",
+        "`tiny = 1e-5` prevents a divide by zero when every number in a row is the same. `axis=-1` means 'do this across each row', so all 64 tokens are normalized separately but in one go. The function returns the result plus `(normalized, spread, scale)` for the backward pass."
+      ]
+    },
+    {
+      "id": "linear",
+      "title": "Linear layer",
+      "lines": [82, 85],
+      "explain": [
+        "A linear layer is just a matrix multiply plus a bias: `vectors @ weights + bias`. If `vectors` is (64, 128) and `weights` is (128, 384), the result is (64, 384). Each token's 128 numbers become 384 new numbers, and each new number is its own weighted mix of the original 128. The same bias is added to every token's row.",
+        "The cache saves both the input vectors and the weights, because the backward pass of a matrix multiply needs both of them."
+      ]
+    },
+    {
+      "id": "softmax",
+      "title": "Softmax",
+      "lines": [87, 99],
+      "explain": [
+        "Softmax turns a row of scores, which can be any numbers at all, into positive numbers that add up to 1, so they work like percentages. It raises e to the power of each score, then divides each result by their total. For example, softmax([2.0, 1.0, 0.1]) = [0.66, 0.24, 0.10]. Bigger scores get a much bigger share.",
+        "Subtracting the row's biggest score first doesn't change the answer, because it cancels out when you divide. What it does do is stop `np.exp` from overflowing to infinity when a score is large. It also means a score of -1e9 comes out as a weight of exactly 0, which is how attention hides future tokens.",
+        "The file uses this function in three places: for attention weights, for the gradient of the loss, and for picking the next token when generating."
+      ]
+    },
+    {
+      "id": "gelu",
+      "title": "GELU, the bend",
+      "lines": [101, 108],
+      "explain": [
+        "GELU works on each number separately. Positive numbers pass through almost unchanged, and negative numbers get squashed toward 0: gelu([-2, 0, 2]) is about [-0.045, 0, 1.955]. Think of it as a smooth version of 'keep it if it's positive, otherwise make it 0'.",
+        "Why it's needed: two matrix multiplies in a row with nothing in between are the same as one matrix multiply, so stacking them would add nothing. The bend is what lets the MLP learn rules like 'fire only when this AND that are both present'. The constants 0.7978845608 (the square root of 2 divided by pi) and 0.044715 come from the formula in the GELU paper."
+      ]
+    },
+    {
+      "id": "forward-embeddings-qkv",
+      "title": "Forward: embeddings, layer norm and Q, K, V",
+      "lines": [110, 137],
+      "explain": [
+        "`forward` is the whole model as one function. A window of token ids goes in, and a score for every possible next token, at every spot in the window, comes out. First, each token id picks its row from the token table, each position picks its row from the position table, and the two are added: (64, 128) + (64, 128). Now each token's vector holds both what the token is and where it sits.",
+        "Then a loop runs the 6 blocks. Each block starts a fresh `cache` dictionary and layer-norms the vectors. A single linear layer then makes the queries, keys and values all at once: (64, 128) @ (128, 384) gives (64, 384), and `np.split` cuts that into three (64, 128) pieces.",
+        "The reshape and transpose divide each piece among the heads. (64, 128) becomes (64, 4, 32), and then (4, 64, 32). Now each of the 4 heads has its own (64, 32) grid of queries, keys and values, and NumPy can process all 4 heads together in single operations."
+      ]
+    },
+    {
+      "id": "attention-scores-mask",
+      "title": "Attention scores and the causal mask",
+      "lines": [139, 157],
+      "explain": [
+        "Each token's query is compared with every token's key using a dot product: multiply the 32 matching numbers and add up the results. A big result means 'what this token is looking for matches what that token has'. `queries @ keys.transpose(0, 2, 1)` does this for every pair of tokens in every head at once: (4, 64, 32) @ (4, 32, 64) gives (4, 64, 64). Row i, column j is how much token i cares about token j.",
+        "The scores are divided by the square root of 32 (about 5.66). Adding up 32 products can produce large numbers, and large scores would make softmax put nearly all of the weight on a single token.",
+        "Next comes the mask. `np.triu(..., k=1)` marks every spot above the diagonal, which means every token that comes later. Those scores are set to -1e9, so after softmax they get a weight of 0. Token 0 can see only itself, while token 63 can see all 64 tokens. Without the mask, the model could simply look at the next word during training instead of learning to guess it.",
+        "Finally, softmax turns each row into weights that add up to 1. For each head, row i now says how much token i listens to each of tokens 0 through 63."
+      ]
+    },
+    {
+      "id": "attention-values-output",
+      "title": "Mixing values and the output projection",
+      "lines": [159, 204],
+      "explain": [
+        "`weights @ values` is where tokens actually share information. In each head, a token's new 32 numbers are a weighted sum of the values of the tokens it can see. If token 1 has weights [0.484, 0.516, 0, ...], its result is 0.484 times token 0's value plus 0.516 times its own value. The shapes: (4, 64, 64) @ (4, 64, 32) gives (4, 64, 32).",
+        "The long comment explains why values exist as a separate thing. The query and key decide who a token listens to, and the value decides what gets passed along. Each head has its own value weights, so each head can pass along a different 32-number summary of the same token.",
+        "Then the heads are glued back together, the reverse of the earlier split. (4, 64, 32) becomes (64, 4, 32) and then (64, 128), with head 0's 32 numbers first, then head 1's, and so on. One more linear layer, `output_weights` (128, 128), lets every output number mix information from all 4 heads. That finishes attention."
+      ]
+    },
+    {
+      "id": "first-residual",
+      "title": "The first residual",
+      "lines": [206, 211],
+      "explain": [
+        "Attention's result is added onto the vectors instead of replacing them. Each token keeps what it already knew and adds what it just gathered from earlier tokens. This is called a residual connection.",
+        "It also makes training easier. In the backward pass a plus sign passes the gradient straight through unchanged, so even block 1, at the bottom of the stack, still gets a clear signal about how to improve."
+      ]
+    },
+    {
+      "id": "mlp-second-residual",
+      "title": "The MLP and the second residual",
+      "lines": [213, 260],
+      "explain": [
+        "Before the MLP comes a second layer norm, which has its own scale and shift. The MLP is a small two-layer network that each token runs by itself, without looking at any other token. `expand_weights` widens each token from 128 numbers to 512, and each of the 512 is its own mix of all 128, like 512 separate pattern detectors. The tiny example in the comments widens a 2-number token into 8 different mixes, not 4 copies.",
+        "GELU bends the 512 numbers: detectors that come out positive fire, and negative ones go quiet. Then `shrink_weights` mixes them back down to 128, so the result fits back onto the token's vector. The shapes go (64, 128) to (64, 512) to (64, 128).",
+        "The MLP's output is added on as the second residual. That completes one block: layer norm, attention, add, layer norm, MLP, add. What comes out is the same (64, 128) shape that went in, so the next block can do the whole thing again.",
+        "Attention and GELU don't go through `linear` or `layer_norm`, so the things backprop will need from them (the queries, keys and values, the attention weights, and `wide`, the numbers that went into GELU) are saved into the cache by hand. Then the block's cache is appended to `block_caches`."
+      ]
+    },
+    {
+      "id": "logits-and-caches",
+      "title": "Final layer norm, logits and the caches",
+      "lines": [262, 307],
+      "explain": [
+        "After block 6 there is one last layer norm, then the head. The head is a linear layer that gives every token in the vocabulary a score at every spot: (64, 128) @ (128, 4841) gives (64, 4841). Row t holds the guesses for the token that comes right after token t.",
+        "These raw scores are called logits. A logit can be any number, positive or negative, and a bigger one just means 'more likely'. Softmax would turn them into probabilities: scores of 4.1, 1.3 and -2.0 become about 0.94, 0.06 and 0.00.",
+        "`forward` returns the logits plus everything backprop needs: the window (so it knows which embedding rows were used), the 6 block caches, the final layer norm's cache and the head's cache. The diagram in the comments shows the backward pass using these in reverse order."
+      ]
+    },
+    {
+      "id": "loss",
+      "title": "The loss: how wrong was the guess",
+      "lines": [313, 359],
+      "explain": [
+        "The loss is a single number that says how bad the predictions were. We know the real next token at each of the 64 spots (these are the targets), so we look up the probability the model gave that token and score it with -log(probability). Being sure and right (probability 0.9) costs about 0.1. Being sure and wrong (probability 0.001) costs about 6.9. The loss is the average over the 64 spots, and this scoring method is called cross-entropy.",
+        "`get_loss` never builds the full table of probabilities. Taking -log of e^(right score) / (sum of e^every score) splits into log(sum of e^every score) minus the right score, which is exactly what the code computes: `log_of_total - right_answer_scores`. Subtracting each row's maximum first keeps `np.exp` from overflowing without changing the answer.",
+        "Here is the worked example from the comments. The logits are 4.1, 1.3 and -2.0, and the first token is the right answer. After shifting they are 0, -2.8 and -6.1. Their e^ values add up to 1.063, and the log of that is 0.061, so the loss is 0.061 - 0 = 0.061. That matches -log(0.94). If the right answer had been the second token, the loss would be 2.861."
+      ]
+    },
+    {
+      "id": "first-run",
+      "title": "A first run before training",
+      "lines": [361, 371],
+      "explain": [
+        "To test the pieces so far, the code takes the first 64 tokens as a window, plus 64 targets shifted over by one. `targets[t]` is the token that actually came after `window[t]`, so every spot is its own little 'guess the next token' question.",
+        "It runs `forward` and `get_loss`, then prints the shape of the logits, (64, 4841), and the loss next to log(vocab_size). With 4,841 tokens, log(vocab_size) is about 8.49, which is the loss you'd get by guessing uniformly at random. An untrained model with tiny random weights should land very close to that number. A first loss far away from it would mean a bug."
+      ]
+    },
+    {
+      "id": "backprop-linear-backward",
+      "title": "Backprop and linear backward",
+      "lines": [428, 457],
+      "explain": [
+        "For every number in `params`, the backward pass answers one question: if this number went up a tiny bit, would the loss go up or down, and by how much? That answer is the number's gradient. Training then nudges each number the opposite way, downhill.",
+        "It works with the chain rule. Each step takes the gradient of its output, turns it into the gradient of its input, and hands that back to the step before it. Only three patterns are needed. For y = a + b, both a and b get y's gradient unchanged. For y = x @ w, x gets gradient @ w.T and w gets x.T @ gradient. For y = x * w, each one gets the gradient times the other.",
+        "`linear_backward` applies the matrix multiply rule. Take a (64, 128) input and (128, 384) weights. An incoming (64, 384) gradient produces a (64, 128) gradient for the input and a (128, 384) gradient for the weights, the same shape as the weights. The bias was added to all 64 tokens, so its gradient is the sum of those 64 rows."
+      ]
+    },
+    {
+      "id": "layer-norm-gelu-backward",
+      "title": "Layer norm and GELU backward",
+      "lines": [459, 477],
+      "explain": [
+        "In layer norm, scale and shift are the easy part. Shift was added, so it gets the gradient, summed over tokens. Scale multiplied the normalized numbers, so it gets the gradient times the normalized numbers, also summed.",
+        "The input's gradient is trickier, because layer norm cancels out some changes. If every number in a row went up by the same amount, subtracting the average would remove it. If they all stretched apart together, dividing by the spread would remove that. So those two parts are taken out of the gradient (the two `.mean` terms), and the result is divided by the spread, just as the forward pass divided by it.",
+        "`gelu_backward` multiplies the gradient by GELU's slope at each input, using the derivative of the tanh formula. Where the input was clearly positive, the slope is about 1 and the gradient passes through. Where it was very negative, the slope is about 0 and the gradient stops there, because a detector that wasn't firing barely changes when its input moves a little."
+      ]
+    },
+    {
+      "id": "backward-head",
+      "title": "Backward: from the loss to the final layer norm",
+      "lines": [480, 500],
+      "explain": [
+        "`backward` takes the logits, the targets and the cache from `forward`. It fills a `grads` dictionary with one gradient for each entry in `params`, using the same names and shapes.",
+        "Step 1 is the gradient of the loss with respect to the logits, and it turns out to be very simple: the softmax probabilities, minus 1 at the right answer. Say the right token is ' upon' and the guesses were 0.10, 0.30 and 0.60. Then the gradient is -0.90, 0.30 and 0.60. Negative means 'raise this score' and positive means 'lower it'. The result is divided by 64 because the loss was an average over 64 spots.",
+        "Steps 2 and 3 go back through the head and the final layer norm using the helper functions. They produce gradients for `head_weights`, `head_bias` and the final scale and shift. What's left in `gradient` is (64, 128): how each token's vector coming out of block 6 should change."
+      ]
+    },
+    {
+      "id": "backward-mlp",
+      "title": "Backward through each block's MLP",
+      "lines": [502, 516],
+      "explain": [
+        "Step 4 loops over the blocks in reverse, from block 6 down to block 1. Inside each block it undoes the forward steps in reverse order: the MLP first, then attention.",
+        "The forward pass ended with `vectors = vectors + mlp_output`. Because of that plus, the gradient flows two ways: straight down to the vectors below, and into the MLP. The MLP path goes back through `shrink`, then GELU (using the saved `wide`), then `expand`, then the second layer norm, collecting gradients for all their weights along the way. At the end, the two paths are added back together."
+      ]
+    },
+    {
+      "id": "backward-attention",
+      "title": "Backward through attention",
+      "lines": [518, 547],
+      "explain": [
+        "The attention residual works the same way. The gradient goes back through the output linear layer and is cut into heads again: (64, 128) to (4, 64, 32).",
+        "The forward pass computed `gathered = weights @ values`, so the matrix multiply rule gives a (4, 64, 64) gradient for the attention weights and a (4, 64, 32) gradient for the values. Then comes softmax's backward step. The weights in a row must add up to 1, so raising one means lowering the others. To account for that, the formula subtracts each row's weighted total before multiplying by the weights. Then it divides by the square root of 32, as the forward pass did. Masked future spots had a weight of 0, so they automatically get a gradient of 0, and the mask needs no backward step of its own.",
+        "The forward pass also computed `scores = queries @ keys.T`, so the same rule gives the gradients for the queries and keys. The three gradients are each glued back to (64, 128) and placed side by side as (64, 384), in the same order they came out of the qkv layer. Then the gradient goes back through the qkv linear layer and the first layer norm, and the attention path joins the straight path again."
+      ]
+    },
+    {
+      "id": "backward-embeddings",
+      "title": "Backward into the embedding tables",
+      "lines": [549, 559],
+      "explain": [
+        "Step 5 reaches the bottom. Each token's vector started as its row in `token_embedding_table`, so each spot's gradient goes to that token's row. The code uses `np.add.at` because the same token can appear more than once in a window (' the', for example), and every appearance's push has to be added up. A plain `+=` with an index array would keep only one of them. Rows for tokens that aren't in the window get 0.",
+        "The position table is simpler. Spot t used position row t, so row t gets spot t's gradient. Then `backward` returns the full `grads` dictionary."
+      ]
+    },
+    {
+      "id": "gradient-count-check",
+      "title": "Checking every array gets a gradient",
+      "lines": [562, 563],
+      "explain": [
+        "This quick check runs `backward` on the test window from before and prints two counts: how many gradients came back, and how many arrays are in `params`. Both should be 78 (2 embedding tables, 12 arrays in each of the 6 blocks, and 4 at the end). That confirms every learned array gets a gradient. It does not check that the gradient values are correct.",
+        "Right after this, the file contains a commented-out 30-step loop, which is skipped here. It was the first simple training attempt: plain gradient descent on one fixed window."
+      ]
+    },
+    {
+      "id": "split-and-windows",
+      "title": "Train/test split and random windows",
+      "lines": [629, 645],
+      "explain": [
+        "The token ids are cut into two parts. The first 90% is for training, and the last 10% is held back as test text the model never trains on. The loss on that test text shows whether the model is learning real patterns or just memorizing its training text.",
+        "`random_window` picks a random starting spot and returns 64 tokens, plus the same 64 shifted one to the right as the targets.",
+        "`test_loss` averages the loss over 50 windows from the test text. It creates its own random generator with seed 123 every time it's called, so it always uses the same 50 windows, and the numbers can be fairly compared over the course of training. It runs only `forward`, with no backward pass, because it's only measuring."
+      ]
+    },
+    {
+      "id": "training-settings",
+      "title": "Training settings and Adam's memory",
+      "lines": [647, 656],
+      "explain": [
+        "Training runs for 1,250 steps. Each step averages the gradients from 16 random windows, so one step learns from 16 x 64 = 1,024 next-token guesses. The learning rate reaches its peak of 0.003 after 100 warmup steps.",
+        "The Adam optimizer keeps two running averages for every learned number: its average gradient and its average squared gradient. That's why `average_gradient` and `average_squared` are dictionaries with the same names and shapes as `params`, starting at all zeros. `train_generator` (seed 0) picks the training windows."
+      ]
+    },
+    {
+      "id": "batch-and-clipping",
+      "title": "One step: 16 windows, then clipping",
+      "lines": [658, 672],
+      "explain": [
+        "Each step starts with a `grads` dictionary full of zeros. Then, for each of 16 random training windows, it runs forward, runs backward, and adds that window's gradients divided by 16. The result is the average gradient over 16 windows, which is less noisy than the gradient from any single window. The model itself still processes one window at a time, since it has no batch dimension.",
+        "Then comes gradient clipping. `length` measures the size of all 2.4 million gradients treated as one giant vector: the square root of the sum of their squares. If it's more than 1.0, every gradient is scaled down by the same factor so the length becomes exactly 1.0. The direction stays the same, but one unusual batch can't cause a huge, damaging step."
+      ]
+    },
+    {
+      "id": "learning-rate-schedule",
+      "title": "Warmup and cosine learning rate",
+      "lines": [674, 679],
+      "explain": [
+        "The step size changes during training. For the first 100 steps it ramps up in a straight line: step 0 uses 0.003 x 1/100 = 0.00003, and step 99 uses the full 0.003. The weights start out random, and big steps early on can push them somewhere bad.",
+        "After warmup, the step size follows half a cosine wave from 0.003 down toward 0. `progress` goes from 0 to 1 over the remaining steps, and 0.5 x (1 + cos(pi x progress)) goes from 1 down to 0 along the way. Halfway through the remaining steps, the rate is 0.0015. Smaller steps near the end let the weights settle down instead of bouncing around."
+      ]
+    },
+    {
+      "id": "adam",
+      "title": "Adam: nudging every number",
+      "lines": [681, 717],
+      "explain": [
+        "Plain gradient descent (`number -= learning_rate * gradient`) has two problems. Different numbers get gradients of wildly different sizes, and a gradient from just 16 windows is noisy. Adam fixes both, separately for every number.",
+        "The first fix is momentum. `average_gradient` is 90% the old average plus 10% the new gradient, so it remembers roughly the last 10 steps. Gradients that keep pointing the same way build up, and gradients that flip back and forth cancel out. `average_squared` does the same thing with the squared gradient (95% old, 5% new, about 20 steps). That measures how big this number's gradients usually are.",
+        "Both averages start at zero, so for the first few steps they're too small. Dividing by (1 - 0.9^(step+1)) and (1 - 0.95^(step+1)) corrects for that. For example, after the first step the average is only 0.1 x gradient, and dividing by 0.1 gives back the real gradient.",
+        "The update is step_size x direction / sqrt(size). Dividing by the usual gradient size means a number whose gradient is steadily 50 and a number whose gradient is steadily 0.0001 both move about 0.003 per step. The `1e-8` prevents dividing by zero. Every 125 steps the loop prints the test loss, which ends up around 3.48."
+      ]
+    },
+    {
+      "id": "saving",
+      "title": "Saving the model",
+      "lines": [719, 722],
+      "explain": [
+        "Once training finishes, `params` and `used_ids` are saved together to `main_functionized_model.pkl` with `pickle`. `used_ids` has to be saved too, because without it there's no way to turn the model's small ids back into tiktoken ids. The comment shows the one line that loads the numbers back in."
+      ]
+    },
+    {
+      "id": "generating",
+      "title": "Generating stories",
+      "lines": [724, 739],
+      "explain": [
+        "`generate` writes text one token at a time. The prompt is encoded with tiktoken and converted to small ids. Any token that never appeared in `stories.txt` is skipped, since the model has no row for it. Then it repeats 80 times: take the last 64 ids (all that fits in the window), run `forward`, and keep only the final row of scores, which is the guess for the token after the last one.",
+        "Two tricks shape the choice. A temperature of 0.8 divides the scores by 0.8, which spreads them further apart, so likely tokens become even more likely and the text plays it a bit safer. Top-k sets every score below the 40th best to -1e9, so only the 40 best tokens can be picked. Softmax turns what's left into probabilities, the random generator picks one (likelier tokens get picked more often), and the chosen token is added to the end.",
+        "At the end, the small ids go back through `used_ids` to become tiktoken ids again, and tiktoken decodes them into text. The last loop writes a story for each of three prompts, each with a different seed, and prints the results."
+      ]
+    }
+  ]
+}

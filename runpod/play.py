@@ -28,7 +28,7 @@ def piece(small_id):
 def tokenize(text):
     # the prompt as tokens. tokens that never appeared in TinyStories have no row in the model, so they get skipped
     out = []
-    for big in model.encoding.encode(text, allowed_special="all"):
+    for big in model.encoding.encode_ordinary(text):   # plain text: the model learned <|endoftext|> as 7 ordinary tokens
         text_piece = model.encoding.decode_single_token_bytes(big).decode("utf-8", errors="replace")
         out.append({"piece": text_piece, "id": model.to_small.get(big), "known": big in model.to_small})
     return out
@@ -78,7 +78,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             event({"type": "prompt", "tokens": prompt_tokens})
             if not ids:
-                ids = [model.to_small[model.encoding.encode("<|endoftext|>", allowed_special="all")[0]]]
+                ids = [t["id"] for t in tokenize("<|endoftext|>")]   # an empty prompt starts as if a story just ended
             write_generator = np.random.default_rng(seed)
             start = time.time()
             for _ in range(new_tokens):
