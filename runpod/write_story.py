@@ -1,6 +1,7 @@
 # write stories on the Mac with the model trained on RunPod (no GPU needed, plain numpy)
 #   .venv/bin/python runpod/write_story.py                          # the 4 usual prompts
 #   .venv/bin/python runpod/write_story.py "Once upon a time, a dog"  # your own prompt
+# play.py imports this file too, so the playground uses the exact same model code
 import sys
 import math
 import pickle
@@ -35,20 +36,25 @@ start = next(i for i, line in enumerate(source) if line.startswith("def layer_no
 end = next(i for i, line in enumerate(source) if line.startswith("def get_loss"))
 exec("\n".join(source[start:end]))
 
+def next_token_probabilities(ids, temperature=0.8, top_k=40):
+    # the model's guess for the token after ids: logits for the last position -> temperature -> keep top_k -> softmax
+    recent = np.array([ids[-context_length:]])
+    scores = forward(recent)[0][0, -1].astype(np.float64) / temperature
+    scores = np.where(scores < np.sort(scores)[-top_k], -1e9, scores)
+    probabilities = np.exp(scores - scores.max())
+    return probabilities / probabilities.sum()
+
 def generate(prompt, new_tokens=150, temperature=0.8, top_k=40, seed=0):
     write_generator = np.random.default_rng(seed)
-    ids = [to_small[t] for t in encoding.encode(prompt) if t in to_small]
+    ids = [to_small[t] for t in encoding.encode(prompt, allowed_special="all") if t in to_small]
     for _ in range(new_tokens):
-        recent = np.array([ids[-context_length:]])
-        scores = forward(recent)[0][0, -1].astype(np.float64) / temperature
-        scores = np.where(scores < np.sort(scores)[-top_k], -1e9, scores)
-        probabilities = np.exp(scores - scores.max())
-        probabilities = probabilities / probabilities.sum()
+        probabilities = next_token_probabilities(ids, temperature, top_k)
         ids.append(int(write_generator.choice(vocab_size, p=probabilities)))
     return encoding.decode([used_ids[i] for i in ids])
 
-prompts = sys.argv[1:] or ["Once upon a time, there was a", "Tom and Sam went to the park.",
-                           "The little cat was sad because", "Lily found a shiny key in the garden."]
-for prompt in prompts:
-    print(generate(prompt))
-    print("-" * 60)
+if __name__ == "__main__":
+    prompts = sys.argv[1:] or ["Once upon a time, there was a", "Tom and Sam went to the park.",
+                               "The little cat was sad because", "Lily found a shiny key in the garden."]
+    for prompt in prompts:
+        print(generate(prompt))
+        print("-" * 60)

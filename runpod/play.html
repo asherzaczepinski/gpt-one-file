@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Playground</title>
+<style>
+:root {
+  --bg: #f7f3ea; --paper: #fffdf7; --ink: #1f1b16; --muted: #6b6257; --line: #e3dccd;
+  --accent: #b4441f; --accent-soft: #f6dfd3; --good: #1d5a3c;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.6 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 36px 16px 80px; }
+h1, h2, h3, .ui { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+h1 { font-size: 2.2rem; line-height: 1.15; letter-spacing: -.01em; margin: .2em 0 .3em; }
+h2 { font-size: 1.15rem; margin: 1.8em 0 .5em; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.1rem; color: var(--muted); margin: 0 0 1em; }
+.mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 1em 0; box-shadow: var(--shadow); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 500 .85rem/1.4 "Avenir Next", system-ui, sans-serif; color: var(--muted); }
+.facts b { color: var(--ink); font-weight: 650; }
+
+label.lab { display: block; font: 600 .72rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+textarea { width: 100%; min-height: 76px; resize: vertical; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+textarea:focus, input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.chip { font: 500 .8rem/1 "Avenir Next", system-ui, sans-serif; background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; cursor: pointer; }
+.chip:hover { color: var(--accent); border-color: var(--accent); }
+
+.knobs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 14px; }
+@media (max-width: 640px) { .knobs { grid-template-columns: 1fr 1fr; } }
+.knob .val { font: 600 .9rem/1 "SF Mono", Menlo, monospace; color: var(--ink); float: right; text-transform: none; letter-spacing: 0; }
+.knob input[type=range] { width: 100%; accent-color: var(--accent); }
+.knob .hint { font: 400 .76rem/1.35 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin-top: 2px; }
+.seedrow { display: flex; gap: 6px; }
+.seedrow input { width: 100%; min-width: 0; font: 600 .9rem "SF Mono", Menlo, monospace; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+.actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 16px; }
+button.main { font: 650 .95rem/1 "Avenir Next", system-ui, sans-serif; background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 11px 18px; cursor: pointer; }
+button.main:disabled { opacity: .45; cursor: default; }
+button.ghost { font: 600 .85rem/1 "Avenir Next", system-ui, sans-serif; background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+button.ghost:disabled { opacity: .4; cursor: default; }
+.status { font: 500 .85rem/1.3 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin-left: auto; }
+.toggle { font: 500 .85rem/1 "Avenir Next", system-ui, sans-serif; color: var(--muted); display: flex; gap: 6px; align-items: center; cursor: pointer; }
+
+.tokens { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.tok { font: .8rem/1 "SF Mono", Menlo, monospace; background: var(--accent-soft); border-radius: 5px; padding: 4px 5px; white-space: pre; }
+.tok.unknown { background: transparent; border: 1px dashed var(--muted); color: var(--muted); text-decoration: line-through; }
+
+#story { font-size: 1.12rem; line-height: 1.75; white-space: pre-wrap; min-height: 9em; }
+#story .prompt { color: var(--muted); }
+#story .g { border-radius: 4px; cursor: pointer; transition: background .15s; }
+#story .g:hover { outline: 1px solid var(--accent); }
+#story .g.sel { outline: 2px solid var(--accent); }
+#story .end { display: block; text-align: center; font: 600 .72rem/2.4 "Avenir Next", system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); cursor: pointer; }
+#story .placeholder { color: var(--muted); font-style: italic; }
+
+#inspect h3 { margin: 0 0 4px; font-size: 1rem; }
+#inspect .sub { font: 400 .85rem/1.45 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin: 0 0 12px; }
+.bar { display: grid; grid-template-columns: 9em 1fr 4.2em; gap: 10px; align-items: center; margin: 5px 0; font: .85rem/1.2 "SF Mono", Menlo, monospace; }
+.bar .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.bar .track { height: 12px; background: var(--line); border-radius: 6px; overflow: hidden; }
+.bar .fill { height: 100%; background: var(--muted); border-radius: 6px; }
+.bar.chosen .fill { background: var(--accent); }
+.bar.chosen .w { color: var(--accent); font-weight: 700; }
+.bar .pct { text-align: right; color: var(--muted); }
+
+.explain p { margin: 0 0 .8em; }
+.explain p:last-child { margin: 0; }
+.err { color: var(--accent); font: 500 .9rem "Avenir Next", system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Trained on RunPod for $0.93</div>
+  <h1>Story Playground</h1>
+  <p class="lede">Give your model the start of a story and watch it write, one token at a time. Click any word it wrote to see what else it was thinking of putting there.</p>
+
+  <div class="facts" id="facts"><span>loading the model info…</span></div>
+
+  <div class="card">
+    <label class="lab" for="prompt">Start of the story</label>
+    <textarea id="prompt">Once upon a time, there was a little dog named</textarea>
+    <div class="chips" id="presets"></div>
+
+    <label class="lab" style="margin-top:14px">How the model sees your prompt <span style="text-transform:none;letter-spacing:0;font-weight:400">(one box = one token)</span></label>
+    <div class="tokens" id="ptokens"></div>
+
+    <div class="knobs">
+      <div class="knob">
+        <label class="lab" for="temp">Temperature <span class="val" id="tempv"></span></label>
+        <input type="range" id="temp" min="0.1" max="2" step="0.05" value="0.8">
+        <div class="hint">low = safe and repetitive, high = wild</div>
+      </div>
+      <div class="knob">
+        <label class="lab" for="topk">Top-k <span class="val" id="topkv"></span></label>
+        <input type="range" id="topk" min="1" max="200" step="1" value="40">
+        <div class="hint">only pick from the k likeliest tokens. 1 = always the top one</div>
+      </div>
+      <div class="knob">
+        <label class="lab" for="len">Length <span class="val" id="lenv"></span></label>
+        <input type="range" id="len" min="10" max="400" step="10" value="150">
+        <div class="hint">how many new tokens to write</div>
+      </div>
+      <div class="knob">
+        <label class="lab" for="seed">Seed</label>
+        <div class="seedrow"><input id="seed" type="number" value="0"><button class="ghost" id="dice" title="random seed" aria-label="random seed">🎲</button></div>
+        <div class="hint">same seed + same settings = same story</div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="main" id="go">Write</button>
+      <button class="ghost" id="stop" disabled>Stop</button>
+      <label class="toggle"><input type="checkbox" id="shade" checked> shade by how sure it was</label>
+      <span class="status" id="status"></span>
+    </div>
+  </div>
+
+  <div class="card"><div id="story"><span class="placeholder">The story will appear here.</span></div></div>
+
+  <div class="card" id="inspect">
+    <h3>What it was choosing between</h3>
+    <p class="sub" id="isub">Click a word in the story. You'll see the top tokens the model could have written there, after temperature and top-k. The dice landed on the orange one.</p>
+    <div id="bars"></div>
+  </div>
+
+  <h2>What you're looking at</h2>
+  <div class="card explain">
+    <p><b>Every token is a dice roll.</b> For each new token the model runs the whole forward pass you built (embeddings, 6 blocks of attention + MLP, the head) on the last 128 tokens, and gets a score for all 24,596 tokens it knows. Those scores become probabilities, and it rolls a weighted die.</p>
+    <p><b>Temperature</b> divides the scores before the softmax. Below 1 it makes the favorite even more likely (careful, repetitive). Above 1 it flattens everything out (creative, then nonsense). <b>Top-k</b> throws away everything except the k best tokens before rolling, so it can never pick something really unlikely.</p>
+    <p><b>Shading:</b> the darker a word's background, the less sure the model was when it picked it. Names, plot twists and the first word after a period are usually dark. Words that finish a phrase ("once upon a <i>time</i>") are usually clear.</p>
+    <p><b>Crossed-out prompt tokens</b> never showed up in TinyStories, so the model has no row for them and skips them. Try "Minecraft" or "algorithm": it has never seen them. (It does know "spaceship", "volcano" and "pizza".)</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const presets = ["Once upon a time, there was a", "Tom and Sam went to the park.", "The little cat was sad because",
+                   "Lily found a shiny key in the garden.", "One day, a big dragon", "Mom said, \"", "The robot wanted to"];
+  presets.forEach(p => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = p;
+    b.onclick = () => { $("prompt").value = p; showPromptTokens(); };
+    $("presets").appendChild(b);
+  });
+
+  const visible = s => s.replace(/ /g, "␣").replace(/\n/g, "↵");
+  const pct = p => (p >= 0.995 ? "100" : (p * 100).toFixed(p < 0.1 ? 1 : 0)) + "%";
+
+  // the knob labels
+  [["temp", "tempv", v => (+v).toFixed(2)], ["topk", "topkv", v => v], ["len", "lenv", v => v]].forEach(([id, out, f]) => {
+    const upd = () => $(out).textContent = f($(id).value);
+    $(id).addEventListener("input", upd); upd();
+  });
+  $("dice").onclick = () => { $("seed").value = Math.floor(Math.random() * 100000); };
+
+  fetch("/info").then(r => r.json()).then(i => {
+    $("facts").innerHTML =
+      `<span><b>${(i.learned_numbers / 1e6).toFixed(1)}M</b> learned numbers</span>` +
+      `<span><b>${i.embedding_size}</b> numbers per token</span>` +
+      `<span><b>${i.number_of_blocks}</b> blocks × <b>${i.number_of_heads}</b> heads</span>` +
+      `<span>sees <b>${i.context_length}</b> tokens back</span>` +
+      `<span><b>${i.vocab_size.toLocaleString()}</b> tokens known</span>` +
+      `<span>best test loss <b>${i.best_test_loss}</b></span>`;
+  }).catch(() => { $("facts").innerHTML = '<span class="err">Can\'t reach the model. Start it with: .venv/bin/python runpod/play.py</span>'; });
+
+  // show the prompt as tokens (debounced)
+  let tTimer;
+  function showPromptTokens() {
+    clearTimeout(tTimer);
+    tTimer = setTimeout(() => {
+      fetch("/tokenize?text=" + encodeURIComponent($("prompt").value)).then(r => r.json()).then(toks => {
+        $("ptokens").innerHTML = "";
+        toks.forEach(t => {
+          const s = document.createElement("span");
+          s.className = "tok" + (t.known ? "" : " unknown");
+          s.textContent = visible(t.piece);
+          s.title = t.known ? "token #" + t.id : "never seen in TinyStories, skipped";
+          $("ptokens").appendChild(s);
+        });
+      }).catch(() => {});
+    }, 200);
+  }
+  $("prompt").addEventListener("input", showPromptTokens);
+  showPromptTokens();
+
+  // shading: less sure = darker background
+  function shadeOf(p) { return `color-mix(in srgb, var(--accent) ${Math.round((1 - p) * 42)}%, transparent)`; }
+  function applyShade() {
+    const on = $("shade").checked;
+    document.querySelectorAll("#story .g").forEach(s => s.style.background = on ? shadeOf(+s.dataset.p) : "transparent");
+  }
+  $("shade").onchange = applyShade;
+
+  let steps = [], selected = null;
+  function inspect(i, el) {
+    if (selected) selected.classList.remove("sel");
+    selected = el; el.classList.add("sel");
+    const st = steps[i];
+    $("isub").textContent = `Token ${i + 1}: it picked "${visible(st.piece)}" with a ${pct(st.p)} chance.` +
+      (st.p < 0.2 ? " That was a long shot, the dice got lucky." : st.p > 0.8 ? " It was pretty sure about this one." : "");
+    $("bars").innerHTML = "";
+    st.top.forEach(([w, p]) => {
+      const row = document.createElement("div");
+      row.className = "bar" + (w === st.piece ? " chosen" : "");
+      row.innerHTML = `<span class="w"></span><span class="track"><span class="fill" style="width:${(p * 100).toFixed(1)}%"></span></span><span class="pct">${pct(p)}</span>`;
+      row.querySelector(".w").textContent = w === "<|endoftext|>" ? "[end of story]" : visible(w);
+      $("bars").appendChild(row);
+    });
+  }
+
+  let controller = null;
+  async function write() {
+    controller = new AbortController();
+    $("go").disabled = true; $("stop").disabled = false;
+    $("story").innerHTML = ""; $("bars").innerHTML = ""; steps = []; selected = null;
+    $("isub").textContent = "Click a word in the story to see what it was choosing between.";
+    $("status").textContent = "thinking…";
+    const q = new URLSearchParams({ prompt: $("prompt").value, temperature: $("temp").value, top_k: $("topk").value,
+                                    tokens: $("len").value, seed: $("seed").value });
+    const started = performance.now();
+    try {
+      const res = await fetch("/generate?" + q, { signal: controller.signal });
+      const reader = res.body.getReader(), dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let cut;
+        while ((cut = buf.indexOf("\n\n")) >= 0) {
+          const line = buf.slice(0, cut); buf = buf.slice(cut + 2);
+          if (line.startsWith("data: ")) handle(JSON.parse(line.slice(6)), started);
+        }
+      }
+    } catch (e) {
+      if (e.name !== "AbortError") $("status").innerHTML = '<span class="err">lost the connection to play.py</span>';
+    }
+    $("go").disabled = false; $("stop").disabled = true;
+  }
+
+  function handle(ev, started) {
+    const story = $("story");
+    if (ev.type === "prompt") {
+      const p = document.createElement("span");
+      p.className = "prompt"; p.textContent = ev.tokens.filter(t => t.known).map(t => t.piece).join("");
+      story.appendChild(p);
+    } else if (ev.type === "token") {
+      const i = steps.length; steps.push(ev);
+      const s = document.createElement("span");
+      if (ev.piece === "<|endoftext|>") { s.className = "end"; s.textContent = "· end of story ·"; }
+      else { s.className = "g"; s.textContent = ev.piece; }
+      s.dataset.p = ev.p;
+      if ($("shade").checked && s.className === "g") s.style.background = shadeOf(ev.p);
+      s.onclick = () => inspect(i, s);
+      story.appendChild(s);
+      const secs = (performance.now() - started) / 1000;
+      $("status").textContent = `${steps.length} tokens · ${(steps.length / secs).toFixed(1)} per second`;
+    } else if (ev.type === "done") {
+      $("status").textContent = `${ev.tokens} tokens in ${ev.seconds.toFixed(1)} s (${(ev.tokens / ev.seconds).toFixed(1)} per second)`;
+    }
+  }
+
+  $("go").onclick = write;
+  $("stop").onclick = () => { if (controller) controller.abort(); $("status").textContent = "stopped"; };
+  $("prompt").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("go").disabled) write(); });
+})();
+</script>
+</body>
+</html>

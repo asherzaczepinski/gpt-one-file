@@ -1,0 +1,136 @@
+THE RUNPOD MODEL
+================
+A bigger version of the GPT from main_functionized.py, trained on a rented GPU for $0.93 on Nov 21, 2026.
+Same forward pass, same hand-written backprop, same Adam. Just more numbers and way more text.
+
+
+WHAT IT IS
+----------
+                          main_functionized.py (Mac)      RunPod model
+  numbers per token       128                              256
+  attention heads         4 (of 32 each)                   8 (of 32 each)
+  blocks                  6                                6
+  sees back               64 tokens                        128 tokens (about 100 words)
+  learned numbers         2.4 million                      17.4 million  (17,389,588)
+  tokens it knows         4,841                            24,596
+  training text           stories.txt, 215,000 tokens      TinyStories, 97.5 million tokens (~450x more)
+  windows per step        16                               32
+  best test loss          3.48                             1.545
+
+  (the two losses aren't a perfect apples-to-apples comparison, since they use different vocabularies,
+   but the stories show the difference clearly, see below)
+
+TinyStories = a free dataset of about 2 million short, simple children's stories, made for training small
+models like this one. The run used the first 400 MB of it (382 MB after the download got cut at a story).
+
+
+HOW IT WAS TRAINED
+------------------
+  GPU          NVIDIA RTX 2000 Ada (16 GB), RunPod secure cloud, $0.24/hour
+  code         runpod/train_tinystories.py = main_functionized_cuda.py + a bigger data loader + a timed loop
+  library      CuPy (numpy that runs on the GPU), float32
+  speed        0.152 s per step = 26,944 tokens/sec (about 7x one Mac core)
+  length       222 minutes, 87,619 steps, 359 million tokens = 3.7 trips through the text
+  learning     Adam, learning rate 0.001, 200 warmup steps, cosine slide down to 10%, gradient clipping at 1
+  test split   last 1% of the text, never trained on
+
+The test loss, every ~9 minutes:
+  start   10.153   (random guessing = 10.110)
+   9 min   2.060
+  18 min   1.920
+  36 min   1.786
+  62 min   1.708
+  98 min   1.646
+ 125 min   1.612
+ 160 min   1.582
+ 196 min   1.553
+ 223 min   1.545   <- best, saved
+
+It never started memorizing: the test loss kept going down the whole time and stayed BELOW the train loss
+(1.575). That's the opposite of the Mac runs, where it started getting worse after about 6 minutes. More text
+fixed it, just like the notes predicted.
+
+
+WHAT IT WRITES
+--------------
+Same prompt, both models:
+
+  Mac model (test loss 3.48):
+    "Tom and Sam went to the park. They ran to slide and play again. They all played together and had fun
+    on the slide. They felt good at Tom was happy and happy. Tim was not happy that he helped their play
+    with the blocks."
+
+  RunPod model (test loss 1.545):
+    "Tom and Sam went to the park. They played on the swings and slide. They had fun. But soon, they got
+    very tired. They needed to sat down on the grass. Tom said, "Sam, let's go home now. We need to rest."
+    Sam agreed. They sat down under a big tree. ... They took a long nap. At the end of the day, they were
+    both better."
+
+Good at: grammar, dialogue with quote marks, keeping the same characters, stories with a start, a problem and
+an ending, and the <|endoftext|> marker between stories.
+Still bad at: logic sometimes ("Tom was too small to move his head off"), forgetting things from more than
+~100 words back, and anything that isn't a simple kids' story. It has no facts and can't chat. Ask it a
+question and it'll just write a story.
+
+All 4 final stories: runpod/results/out/stories.txt
+
+
+WHAT IT COST
+------------
+  balance before   $13.21
+  balance after    $12.28
+  total            $0.93   (+ about half a cent for a first try that crashed in a minute)
+
+Spending limits in the launcher: it won't start unless the balance covers the budget + $0.25, it works out
+how many minutes the budget buys and trains for that minus 15, the pod has its own timer that deletes it at
+the limit (even if the Mac sleeps), and the launcher deletes the pod and checks it's gone at the end.
+
+
+WHAT WENT WRONG ON THE WAY (all fixed in train_on_runpod.sh)
+-----------------------------------------------------------
+1. rest.runpod.io (RunPod's REST address) doesn't exist anymore, not even on public DNS.
+   Fix: everything goes through the GraphQL API at api.runpod.io/graphql
+   (podFindAndDeployOnDemand to create, pod(...) to find the ssh port, podTerminate to delete).
+2. The pod's Ubuntu 24.04 blocked "pip install" (PEP 668, the same thing that happened on the Mac on day 1).
+   Fix: pip install --break-system-packages (fine on a throwaway pod). The script now also stops right away
+   if cupy can't use the GPU, instead of downloading data for nothing.
+3. The ssh command that started training didn't come back until training finished, so the launcher froze
+   and didn't print progress (training itself was fine).
+   Fix: setsid + a 15-second cutoff on that ssh. (Not tested on a real pod yet.)
+
+
+FILES
+-----
+  runpod/train_on_runpod.sh          the one-command launcher: rent, train, copy back, delete
+  runpod/train_tinystories.py        the training code that runs on the pod
+  runpod/results/out/best_model.pkl  the trained model (70 MB: params + the token list + settings)
+  runpod/results/out/stories.txt     the 4 stories it wrote at the end
+  runpod/results/train.log           everything the pod printed
+  runpod/run_log.txt                 everything the launcher did, with times and balances
+  runpod/write_story.py              write stories on the Mac with the trained model
+  runpod/play.py + play.html         the playground (see below)
+  lessons/runpod.html                how the launcher works, step by step
+
+
+PLAY WITH IT
+------------
+  .venv/bin/python runpod/play.py
+opens a page in your browser where you type the start of a story and watch it write, with sliders for
+temperature, top-k, length and seed. Click any word it wrote to see the other tokens it was choosing between
+and their chances. Ctrl+C in the terminal to stop it. Runs on the Mac's CPU, no GPU or money needed.
+
+Or just print stories:
+  .venv/bin/python runpod/write_story.py "Once upon a time, a dog"
+
+
+RUN IT AGAIN
+------------
+  caffeinate -i bash runpod/train_on_runpod.sh                 about $1
+  BUDGET=0.50 caffeinate -i bash runpod/train_on_runpod.sh     about 50 cents
+To change the model size, edit the defaults at the top of train_tinystories.py before running, e.g.
+  embedding_size = int(os.environ.get("EMBEDDING_SIZE", 256))   -> change 256 to 384
+(typing EMBEDDING_SIZE=384 in front of the launcher command does NOT reach the pod). A new run overwrites runpod/results/, so copy the old
+one somewhere first if you want to keep it.
+
+Next steps that would make it smarter: train longer (the test loss was still slowly dropping), a bigger
+model (512 numbers per token, 8 blocks), or seeing further back (256 tokens) so long stories stay on track.
