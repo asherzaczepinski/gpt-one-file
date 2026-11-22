@@ -23,6 +23,12 @@ const flagged = /\b(deadass|legit|thingy|yk|lol|bruh|ngl|lowkey|wtf|idk|fr|tbh)\
 
 fs.mkdirSync("public/code", { recursive: true });
 for (const [name, from] of Object.entries(files)) {
+  // on vercel only this folder gets uploaded, so the originals aren't there: keep the copies already in public/code
+  if (!fs.existsSync(from)) {
+    if (!fs.existsSync("public/code/" + name)) throw new Error(`missing ${from} and public/code/${name}`);
+    console.log(`  ${from} isn't here, using the copy already in public/code/`);
+    continue;
+  }
   let text = fs.readFileSync(from, "utf8");
   for (const [before, after] of cleanups) text = text.split(before).join(after);
   text.split("\n").forEach((line, i) => {

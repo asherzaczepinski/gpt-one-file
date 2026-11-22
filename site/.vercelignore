@@ -1,0 +1,6 @@
+node_modules
+.next
+out
+scripts/fixture.json
+.env*
+.vercel
