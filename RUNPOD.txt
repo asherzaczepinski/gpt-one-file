@@ -61,3 +61,9 @@ Things to know
     sees the training text more times per step, so it starts memorizing in fewer steps. the _best.pkl file is
     saved at the best test loss, so you always keep the best one either way.
   - float32 on the GPU means losses can differ a tiny bit (like the 4th decimal) from the Mac's float64 runs.
+
+main_functionized_cuda.py (Asher's main_functionized.py on the GPU)
+  Same steps, just run this file instead:
+      nohup python main_functionized_cuda.py > cuda_run.log 2>&1 &
+  It trains, saves main_functionized_cuda_model.pkl (plain numpy, loads on the Mac too), and writes 3 stories.
+  Every line that changed from main_functionized.py is explained in lessons/cuda.html.

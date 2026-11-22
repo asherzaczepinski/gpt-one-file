@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NumPy to CUDA</title>
+<style>
+:root {
+  --bg: #f7f3ea; --paper: #fffdf7; --ink: #1f1b16; --muted: #6b6257; --line: #e3dccd;
+  --accent: #b4441f; --accent-soft: #f6dfd3;
+  --old: #7a2a10; --old-soft: #f6e1d8; --new: #1d5a3c; --new-soft: #e1eee6;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519;
+    --old: #f0a487; --old-soft: #33201a; --new: #9fdcb9; --new-soft: #1b2b22; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519;
+  --old: #f0a487; --old-soft: #33201a; --new: #9fdcb9; --new-soft: #1b2b22; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 40px 16px 80px; }
+.prose { max-width: 760px; }
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2.2em 0 .6em; }
+h3 { font-size: 1.08rem; margin: 2em 0 .5em; padding-top: 14px; border-top: 1px solid var(--line); }
+p { margin: 0 0 1em; max-width: 760px; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; max-width: 760px; }
+.note > :last-child { margin-bottom: 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .4em 0 1em; }
+th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .72rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.scroll { overflow-x: auto; max-width: 760px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 1em 0; max-width: 760px; }
+@media (max-width: 560px) { .stats { grid-template-columns: 1fr; } }
+.stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.stat .v { font: 700 1.5rem/1.2 "SF Mono", Menlo, monospace; }
+.stat .l { font: 500 .82rem/1.35 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin-top: 4px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: .4em 0 .9em; }
+@media (max-width: 820px) { .pair { grid-template-columns: 1fr; } }
+.pair > div { min-width: 0; }
+.lab { font: 600 .7rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 4px; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .76rem; line-height: 1.5; border-radius: 9px; padding: 10px 12px; overflow-x: auto; margin: 0; border: 1px solid var(--line); }
+pre.old { background: var(--old-soft); color: var(--old); }
+pre.new { background: var(--new-soft); color: var(--new); }
+pre.plain { background: var(--paper); color: var(--ink); max-width: 760px; margin: .8em 0 1.2em; }
+.times { font: 500 .8rem/1.3 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin: -.4em 0 .9em; }
+ol.toc { font-family: "Avenir Next", system-ui, sans-serif; font-size: .92rem; line-height: 1.8; padding-left: 0; list-style: none; }
+ol.toc a { text-decoration: none; }
+.backlink { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; gap: 18px; flex-wrap: wrap; }
+.backlink a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow">Running on a GPU · main_functionized.py → main_functionized_cuda.py</div>
+<h1>NumPy to CUDA</h1>
+<p class="lede">How your model goes from running on your Mac's CPU to running on an NVIDIA GPU on RunPod, and every line that had to change to get there.</p>
+
+<div class="stats">
+  <div class="stat"><div class="v">66</div><div class="l">of your 742 lines changed (plus 100 added, mostly comments)</div></div>
+  <div class="stat"><div class="v">identical</div><div class="l">same scores, same gradients (to 15 decimal places), same test losses as yours</div></div>
+  <div class="stat"><div class="v">2 ideas</div><div class="l">every change is either "use the GPU version of numpy" or "do 16 windows at once"</div></div>
+</div>
+
+<h2>NumPy vs CUDA vs CuPy, in plain words</h2>
+<p><b>NumPy</b> does its math on the <b>CPU</b>, the main chip in your Mac. A CPU has a few very fast, very smart cores (your M4 has 10).</p>
+<p><b>A GPU</b> is a different chip with <b>thousands</b> of small, simple cores. Each one is slower than a CPU core, but a matrix multiply is millions of separate multiply-and-adds that don't depend on each other, so thousands of cores can each do a slice at the same time.</p>
+<p><b>CUDA</b> is NVIDIA's system for running code on their GPUs. It's low-level and normally written in C++.</p>
+<p><b>CuPy</b> is the bridge: a Python library that copies numpy's functions (same names, same arguments) but runs each one on the GPU through CUDA. That's why the change is mostly <span class="mono">np.</span> → <span class="mono">xp.</span>, where xp is CuPy on the pod and plain numpy on your Mac.</p>
+
+<div class="scroll">
+<table>
+  <tr><th></th><th>NumPy (yours)</th><th>CuPy (the CUDA version)</th></tr>
+  <tr><td>Where the arrays live</td><td>your computer's normal memory (RAM)</td><td>the GPU's own memory. a GPU array is invisible to numpy, so you can't hand one to an np. function</td></tr>
+  <tr><td>Who does the math</td><td>the CPU</td><td>the GPU's thousands of cores</td></tr>
+  <tr><td>The code</td><td><span class="mono">np.exp(x)</span>, <span class="mono">a @ b</span></td><td><span class="mono">xp.exp(x)</span>, <span class="mono">a @ b</span> (same names, same shapes, same answers)</td></tr>
+  <tr><td>Moving data</td><td>not needed</td><td><span class="mono">xp.asarray(a)</span> copies CPU → GPU. <span class="mono">a.get()</span> copies GPU → CPU (that's <span class="mono">to_cpu</span>). copying is slow, so it happens as rarely as possible</td></tr>
+  <tr><td>Number type</td><td>float64 (64-bit)</td><td>float32 (32-bit): most GPUs do 32-bit math many times faster. tiny rounding differences, no real effect on training</td></tr>
+  <tr><td>Small work</td><td>fine</td><td>wasteful. each operation costs a little time just to start on the GPU, so it needs big chunks of work. that's why the CUDA version batches 16 windows together</td></tr>
+  <tr><td>Waiting</td><td>every line finishes before the next one starts</td><td>Python just queues work for the GPU and keeps going. it only waits when it needs an actual number back, like <span class="mono">float(loss)</span></td></tr>
+</table>
+</div>
+
+<div class="note">
+<p><b>Why batching matters so much here.</b> Your model's matrices are small (one window is 64 × 128). Handing a GPU one window is like giving one sheet of homework to a classroom of 5,000 kids: most of them sit there. Stacking 16 windows into one (16, 64, 128) array gives every step 16 times more work at once, for about the same startup cost. And as the checks above show, one batch of 16 gives the exact same gradient as your loop over 16 windows, because the loss is an average either way.</p>
+</div>
+
+<h2>Every change, in order</h2>
+<p>Old on the left, new on the right. These come straight from the script that made the CUDA file, so they're exactly what changed.</p>
+<ol class="toc">
+<li><a href="#g1">1. The top: use the GPU if there is one</a></li>
+<li><a href="#g2">2. Move every learned number onto the GPU</a></li>
+<li><a href="#g3">3. np → xp in the math</a></li>
+<li><a href="#g4">4. forward(): a whole batch of windows at once</a></li>
+<li><a href="#g5">5. get_loss(): every spot in every window is one question</a></li>
+<li><a href="#g6">6. The little test run: a batch of 1</a></li>
+<li><a href="#g7">7. backward(): same batch, flatten for the sums</a></li>
+<li><a href="#g8">8. Training: one batch instead of a loop of 16</a></li>
+<li><a href="#g9">9. Saving and writing: copy back to the CPU</a></li>
+</ol>
+
+<h3 id="g1">1. The top: use the GPU if there is one</h3>
+<p>A note at the top saying what this file is, so it's clear which version you're looking at.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">#main.py, but the model is one function (forward) so it&#x27;s ready for backprop</pre></div><div><div class="lab">cuda version</div><pre class="new">#main_functionized.py, but it runs on an nvidia gpu (runpod) with cupy. see lessons/cuda.html for every line that changed
+#main.py, but the model is one function (forward) so it&#x27;s ready for backprop</pre></div></div>
+<p>Imports math (needed for one fix below), then tries to import CuPy. CuPy has the same functions as numpy (cp.zeros, cp.exp, @ ...) but every array lives in the GPU&#x27;s memory and every operation runs on the GPU. If CuPy isn&#x27;t installed (like on your Mac), xp is just numpy, so the same file still runs anywhere. float32 on the GPU because GPUs are many times faster at 32-bit numbers than 64-bit.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">import pickle
+import numpy as np</pre></div><div><div class="lab">cuda version</div><pre class="new">import pickle
+import math
+import numpy as np      # numpy stays for the cpu jobs: tokenizing, picking random windows, rolling the dice when writing
+
+#the gpu version: xp is cupy (numpy, but every array lives on the nvidia gpu and every math step runs there).
+#if cupy isn&#x27;t installed (like on a mac), xp is plain numpy, so this same file still runs anywhere
+try:
+    import cupy as xp
+    import cupyx
+    on_gpu = True
+except ImportError:
+    xp = np
+    on_gpu = False
+#gpus are many times faster at 32-bit numbers than 64-bit, so float32 on the gpu (float64 on the cpu)
+dtype = xp.float32 if on_gpu else np.float64
+#np.add.at on the cpu, cupyx.scatter_add on the gpu: same job (add into rows, a row used twice gets both pushes)
+scatter_add = cupyx.scatter_add if on_gpu else np.add.at
+
+#copy an array from the gpu back to the cpu (for saving, and for picking the next token)
+def to_cpu(a):
+    return a.get() if on_gpu else a</pre></div></div>
+<h3 id="g2">2. Move every learned number onto the GPU</h3>
+<p>The weights are still made with numpy&#x27;s random generator (same seed, so the exact same starting numbers as main_functionized.py), then copied into GPU memory in one go. After this line, everything in params is a CuPy array.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">params[&quot;head_bias&quot;] = np.zeros(vocab_size)</pre></div><div><div class="lab">cuda version</div><pre class="new">params[&quot;head_bias&quot;] = np.zeros(vocab_size)
+
+#copy every learned number into the gpu&#x27;s memory (as float32 there). from here on, params lives on the gpu
+params = {name: xp.asarray(a, dtype=dtype) for name, a in params.items()}</pre></div></div>
+<h3 id="g3">3. np → xp in the math</h3>
+<p>Every math function that touches GPU arrays has to be the CuPy version. np.sqrt on a GPU array would fail (numpy can&#x27;t read GPU memory), so it becomes xp.sqrt. Same for exp, tanh, log, split, triu, where, concatenate, zeros_like, arange, mean.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    spread = np.sqrt(variance + tiny)</pre></div><div><div class="lab">cuda version</div><pre class="new">    spread = xp.sqrt(variance + tiny)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    exps = np.exp(scores - scores.max(axis=-1, keepdims=True))</pre></div><div><div class="lab">cuda version</div><pre class="new">    exps = xp.exp(scores - scores.max(axis=-1, keepdims=True))</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    return 0.5 * x * (1 + np.tanh(0.7978845608 * (x + 0.044715 * x ** 3)))</pre></div><div><div class="lab">cuda version</div><pre class="new">    return 0.5 * x * (1 + xp.tanh(0.7978845608 * (x + 0.044715 * x ** 3)))</pre></div></div>
+<h3 id="g4">4. forward(): a whole batch of windows at once</h3>
+<p>The big one. Your version runs one (64, 128) window at a time. A GPU has thousands of tiny cores, and each step (every @, every exp) costs a little time just to start on the GPU, so feeding it one small window at a time wastes most of it. This version takes B windows at once, shape (B, 64), so every array gets an extra B in front: (64, 128) becomes (B, 64, 128). The math is identical, it&#x27;s just done for all B windows in one go.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">def forward(window):</pre></div><div><div class="lab">cuda version</div><pre class="new">def forward(windows):
+    #windows is (B, 64): B windows at once (a gpu is only fast when it gets big chunks of work). every shape has a B in front now
+    B, T = windows.shape</pre></div></div>
+<p>len(window) used to be the number of tokens. Now T is, and the token lookup grabs rows for all B windows at once.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    vectors = params[&quot;token_embedding_table&quot;][window] + params[&quot;position_embedding_table&quot;][:len(window)]</pre></div><div><div class="lab">cuda version</div><pre class="new">    vectors = params[&quot;token_embedding_table&quot;][windows] + params[&quot;position_embedding_table&quot;][:T]</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        queries, keys, values = np.split(queries_keys_values, 3, axis=-1)</pre></div><div><div class="lab">cuda version</div><pre class="new">        queries, keys, values = xp.split(queries_keys_values, 3, axis=-1)</pre></div></div>
+<p>Cutting into heads with the batch in front: (B, 64, 128) → (B, 64, 4, 32) → (B, 4, 64, 32). The transpose numbers shift by one because there&#x27;s an extra axis at the front.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">.reshape(len(window), number_of_heads, head_size).transpose(1, 0, 2)</pre></div><div><div class="lab">cuda version</div><pre class="new">.reshape(B, T, number_of_heads, head_size).transpose(0, 2, 1, 3)</pre></div></div><div class="times">this exact change happens 4 times in the file</div>
+<p>Flipping the keys now swaps the last two of 4 axes instead of 3. np.sqrt(32) is just a normal number, so math.sqrt works and doesn&#x27;t need the GPU.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        scores = queries @ keys.transpose(0, 2, 1) / np.sqrt(head_size)</pre></div><div><div class="lab">cuda version</div><pre class="new">        scores = queries @ keys.transpose(0, 1, 3, 2) / math.sqrt(head_size)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        future = np.triu(np.ones((len(window), len(window)), dtype=bool), k=1)</pre></div><div><div class="lab">cuda version</div><pre class="new">        future = xp.triu(xp.ones((T, T), dtype=bool), k=1)</pre></div></div>
+<p>-1e9 is made in the same float32 type as the scores, so CuPy doesn&#x27;t quietly switch the whole array to 64-bit.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        scores = np.where(future, -1e9, scores)</pre></div><div><div class="lab">cuda version</div><pre class="new">        scores = xp.where(future, xp.asarray(-1e9, dtype=scores.dtype), scores)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        gathered = gathered.transpose(1, 0, 2).reshape(len(window), embedding_size)</pre></div><div><div class="lab">cuda version</div><pre class="new">        gathered = gathered.transpose(0, 2, 1, 3).reshape(B, T, embedding_size)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    return logits, (window, block_caches, final_cache, head_cache)</pre></div><div><div class="lab">cuda version</div><pre class="new">    return logits, (windows, block_caches, final_cache, head_cache)</pre></div></div>
+<h3 id="g5">5. get_loss(): every spot in every window is one question</h3>
+<p>Logits are (B, 64, 4841) now, so they get flattened to (B*64, 4841) first: each spot in each window is one more question. Then the same math, with xp.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">def get_loss(logits, targets):</pre></div><div><div class="lab">cuda version</div><pre class="new">def get_loss(logits, targets):
+    #(B, 64, 4841) -&gt; (B*64, 4841): every spot in every window is its own question
+    logits, targets = logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    log_of_total = np.log(np.exp(shifted).sum(axis=-1))</pre></div><div><div class="lab">cuda version</div><pre class="new">    log_of_total = xp.log(xp.exp(shifted).sum(axis=-1))</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    right_answer_scores = shifted[np.arange(len(targets)), targets]</pre></div><div><div class="lab">cuda version</div><pre class="new">    right_answer_scores = shifted[xp.arange(len(targets)), targets]</pre></div></div>
+<p>float() pulls the single loss number back from the GPU. That&#x27;s also the moment Python waits for the GPU to finish everything queued up.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    return float(np.mean(log_of_total - right_answer_scores))</pre></div><div><div class="lab">cuda version</div><pre class="new">    return float(xp.mean(log_of_total - right_answer_scores))</pre></div></div>
+<h3 id="g6">6. The little test run: a batch of 1</h3>
+<p>forward wants a batch now, so the single test window gets wrapped as a batch of 1, shape (1, 64), and copied to the GPU with xp.asarray.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">window = token_ids[:context_length]
+targets = token_ids[1:context_length + 1]</pre></div><div><div class="lab">cuda version</div><pre class="new">window = xp.asarray(token_ids[:context_length][None])          # a batch of 1 window, (1, 64), copied to the gpu
+targets = xp.asarray(token_ids[1:context_length + 1][None])</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">print(logits.shape)    # (64, 4841): a score for every possible next token, at every spot</pre></div><div><div class="lab">cuda version</div><pre class="new">print(logits.shape)    # (1, 64, 4841): 1 window, a score for every possible next token at every spot</pre></div></div>
+<h3 id="g7">7. backward(): same batch, flatten for the sums</h3>
+<p>A weight&#x27;s gradient adds up the blame from every token in every window, so the batch gets flattened to rows first: (B, 64, in) → (B*64, in). Then it&#x27;s exactly your x.T @ gradient rule.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    vectors, weights = cache</pre></div><div><div class="lab">cuda version</div><pre class="new">    vectors, weights = cache
+    #flatten the batch so every token in every window is one row: (B, 64, in) -&gt; (B*64, in)
+    flat_vectors = vectors.reshape(-1, vectors.shape[-1])
+    flat_gradient = gradient.reshape(-1, gradient.shape[-1])</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    weights_gradient = vectors.T @ gradient
+    bias_gradient = gradient.sum(axis=0)</pre></div><div><div class="lab">cuda version</div><pre class="new">    weights_gradient = flat_vectors.T @ flat_gradient
+    bias_gradient = flat_gradient.sum(axis=0)</pre></div></div>
+<p>Layer norm&#x27;s scale and shift get blame from every token in every window, so the same flatten before adding up.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    scale_gradient = (gradient * normalized).sum(axis=0)
+    shift_gradient = gradient.sum(axis=0)</pre></div><div><div class="lab">cuda version</div><pre class="new">    D = normalized.shape[-1]
+    scale_gradient = (gradient * normalized).reshape(-1, D).sum(axis=0)     # added up over every token in every window
+    shift_gradient = gradient.reshape(-1, D).sum(axis=0)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    t = np.tanh(0.7978845608 * (x + 0.044715 * x ** 3))</pre></div><div><div class="lab">cuda version</div><pre class="new">    t = xp.tanh(0.7978845608 * (x + 0.044715 * x ** 3))</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    window, block_caches, final_cache, head_cache = cache</pre></div><div><div class="lab">cuda version</div><pre class="new">    windows, block_caches, final_cache, head_cache = cache
+    B, T = windows.shape     # the shapes in the comments below are for one window, there&#x27;s a B in front of all of them</pre></div></div>
+<p>The very first gradient (probabilities minus 1 at the right answer) is worked out on the flattened (B*64, 4841) version, then put back into (B, 64, 4841).</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    logits_gradient = softmax(logits)                                   # (64, 4841): its guessed probabilities
+    logits_gradient[np.arange(len(targets)), targets] -= 1              # minus 1 at each spot&#x27;s right answer
+    logits_gradient = logits_gradient / len(targets)</pre></div><div><div class="lab">cuda version</div><pre class="new">    flat_targets = targets.reshape(-1)                                  # every spot in every window, in one list
+    logits_gradient = softmax(logits.reshape(-1, logits.shape[-1]))     # (B*64, 4841): its guessed probabilities
+    logits_gradient[xp.arange(len(flat_targets)), flat_targets] -= 1    # minus 1 at each spot&#x27;s right answer
+    logits_gradient = (logits_gradient / len(flat_targets)).reshape(logits.shape)</pre></div></div>
+<p>Same as forward: 4 axes instead of 3, so every transpose swaps the last two of 4.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        weights_gradient = attention_gradient @ values.transpose(0, 2, 1)</pre></div><div><div class="lab">cuda version</div><pre class="new">        weights_gradient = attention_gradient @ values.transpose(0, 1, 3, 2)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        values_gradient = weights.transpose(0, 2, 1) @ attention_gradient</pre></div><div><div class="lab">cuda version</div><pre class="new">        values_gradient = weights.transpose(0, 1, 3, 2) @ attention_gradient</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">keepdims=True)) / np.sqrt(head_size)</pre></div><div><div class="lab">cuda version</div><pre class="new">keepdims=True)) / math.sqrt(head_size)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        keys_gradient = scores_gradient.transpose(0, 2, 1) @ queries</pre></div><div><div class="lab">cuda version</div><pre class="new">        keys_gradient = scores_gradient.transpose(0, 1, 3, 2) @ queries</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        attention_gradient = np.concatenate([</pre></div><div><div class="lab">cuda version</div><pre class="new">        attention_gradient = xp.concatenate([</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">.transpose(1, 0, 2).reshape(len(window), embedding_size),</pre></div><div><div class="lab">cuda version</div><pre class="new">.transpose(0, 2, 1, 3).reshape(B, T, embedding_size),</pre></div></div><div class="times">this exact change happens 3 times in the file</div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    grads[&quot;token_embedding_table&quot;] = np.zeros_like(params[&quot;token_embedding_table&quot;])</pre></div><div><div class="lab">cuda version</div><pre class="new">    grads[&quot;token_embedding_table&quot;] = xp.zeros_like(params[&quot;token_embedding_table&quot;])</pre></div></div>
+<p>np.add.at doesn&#x27;t work on GPU arrays. cupyx.scatter_add is CuPy&#x27;s version of the same thing: add each token&#x27;s push into its row, and a token that shows up more than once gets all of its pushes added.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    np.add.at(grads[&quot;token_embedding_table&quot;], window, gradient)</pre></div><div><div class="lab">cuda version</div><pre class="new">    scatter_add(grads[&quot;token_embedding_table&quot;], windows, gradient)</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    grads[&quot;position_embedding_table&quot;] = np.zeros_like(params[&quot;position_embedding_table&quot;])</pre></div><div><div class="lab">cuda version</div><pre class="new">    grads[&quot;position_embedding_table&quot;] = xp.zeros_like(params[&quot;position_embedding_table&quot;])</pre></div></div>
+<p>Position t gets the push from spot t in every window, so it adds them up over the batch.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    grads[&quot;position_embedding_table&quot;][:len(window)] = gradient</pre></div><div><div class="lab">cuda version</div><pre class="new">    grads[&quot;position_embedding_table&quot;][:T] = gradient.sum(axis=0)     # position t: added up over every window</pre></div></div>
+<h3 id="g8">8. Training: one batch instead of a loop of 16</h3>
+<p>Same 50 test windows as before (same random seed), but stacked into one (50, 64) batch, copied to the GPU, and run in one forward. Averaging over the batch gives the same number as averaging 50 separate losses.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    losses = []
+    for _ in range(50):
+        test_window, test_targets = random_window(test_ids, test_generator)
+        losses.append(get_loss(forward(test_window)[0], test_targets))
+    return np.mean(losses)</pre></div><div><div class="lab">cuda version</div><pre class="new">    #the same 50 windows as before, stacked into one (50, 64) batch and copied to the gpu, then one forward
+    pairs = [random_window(test_ids, test_generator) for _ in range(50)]
+    test_windows = xp.asarray(np.stack([w for w, t in pairs]))
+    test_targets = xp.asarray(np.stack([t for w, t in pairs]))
+    return get_loss(forward(test_windows)[0], test_targets)</pre></div></div>
+<p>Adam&#x27;s memories have to live on the GPU too, next to the numbers they belong to.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">average_gradient = {name: np.zeros_like(a) for name, a in params.items()}
+average_squared = {name: np.zeros_like(a) for name, a in params.items()}</pre></div><div><div class="lab">cuda version</div><pre class="new">average_gradient = {name: xp.zeros_like(a) for name, a in params.items()}
+average_squared = {name: xp.zeros_like(a) for name, a in params.items()}</pre></div></div>
+<p>The windows are still picked on the CPU (same random generator, same windows in the same order as your version), stacked into one (16, 64) batch, copied to the GPU, and run through forward and backward once. One batch of 16 gives exactly the same gradient as averaging 16 separate ones, because the loss is an average either way.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    #guess on 16 random windows, backprop each one, and average their gradients
+    grads = {name: np.zeros_like(a) for name, a in params.items()}
+    for _ in range(windows_per_step):
+        window, targets = random_window(train_ids, train_generator)
+        logits, cache = forward(window)
+        window_grads = backward(logits, targets, cache)
+        for name in params:
+            grads[name] += window_grads[name] / windows_per_step</pre></div><div><div class="lab">cuda version</div><pre class="new">    #pick 16 random windows (on the cpu, same ones as main_functionized.py), stack them into one (16, 64) batch,
+    #copy it to the gpu, and run forward + backward ONCE for all 16. the loss is an average either way, so one batch
+    #of 16 gives exactly the same gradient as averaging 16 separate ones
+    batch = [random_window(train_ids, train_generator) for _ in range(windows_per_step)]
+    windows = xp.asarray(np.stack([w for w, t in batch]))
+    targets = xp.asarray(np.stack([t for w, t in batch]))
+    logits, cache = forward(windows)
+    grads = backward(logits, targets, cache)</pre></div></div>
+<p>np.sqrt can&#x27;t take a GPU number, so each sum gets pulled back with float() and the square root is done with plain math.sqrt.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">    length = np.sqrt(sum((g ** 2).sum() for g in grads.values()))</pre></div><div><div class="lab">cuda version</div><pre class="new">    length = math.sqrt(sum(float((g ** 2).sum()) for g in grads.values()))</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        params[name] -= step_size * direction / (np.sqrt(size) + 1e-8)</pre></div><div><div class="lab">cuda version</div><pre class="new">        params[name] -= step_size * direction / (xp.sqrt(size) + 1e-8)</pre></div></div>
+<h3 id="g9">9. Saving and writing: copy back to the CPU</h3>
+<p>pickle can&#x27;t save GPU memory, so every array gets copied back to the CPU first (to_cpu). The saved file is plain numpy, so it loads fine on your Mac too.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">with open(current_path / &quot;main_functionized_model.pkl&quot;, &quot;wb&quot;) as file:
+    pickle.dump({&quot;params&quot;: params, &quot;used_ids&quot;: used_ids}, file)</pre></div><div><div class="lab">cuda version</div><pre class="new">with open(current_path / &quot;main_functionized_cuda_model.pkl&quot;, &quot;wb&quot;) as file:
+    pickle.dump({&quot;params&quot;: {name: to_cpu(a) for name, a in params.items()}, &quot;used_ids&quot;: used_ids}, file)   # copied back to the cpu to save</pre></div></div>
+<p>The last 64 tokens become a batch of 1 and go to the GPU for forward. Then the 4841 scores come back to the CPU, because picking one token with dice is tiny work and numpy&#x27;s random choice is easiest there.</p>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">        recent = np.array(ids[-context_length:])                  # only the last 64 tokens fit
+        scores = forward(recent)[0][-1] / temperature              # the last spot&#x27;s scores: the guess for what&#x27;s next
+        scores = np.where(scores &lt; np.sort(scores)[-top_k], -1e9, scores)   # everything worse than the 40th best -&gt; 0 chance
+        probabilities = softmax(scores)</pre></div><div><div class="lab">cuda version</div><pre class="new">        recent = xp.asarray(np.array([ids[-context_length:]]))     # only the last 64 tokens fit, as a batch of 1 on the gpu
+        scores = to_cpu(forward(recent)[0][0, -1]).astype(np.float64) / temperature   # the last spot&#x27;s scores, back on the cpu
+        scores = np.where(scores &lt; np.sort(scores)[-top_k], -1e9, scores)   # everything worse than the 40th best -&gt; 0 chance
+        probabilities = np.exp(scores - scores.max())               # softmax, done with numpy since this part is on the cpu
+        probabilities = probabilities / probabilities.sum()</pre></div></div>
+<div class="pair"><div><div class="lab">yours</div><pre class="old">#(load them back later with: params = pickle.load(open(&quot;main_functionized_model.pkl&quot;, &quot;rb&quot;))[&quot;params&quot;])</pre></div><div><div class="lab">cuda version</div><pre class="new">#(load them back later with: params = pickle.load(open(&quot;main_functionized_cuda_model.pkl&quot;, &quot;rb&quot;))[&quot;params&quot;])</pre></div></div>
+
+<h2>Running it on RunPod</h2>
+<p>Same steps as in <span class="mono">RUNPOD.txt</span>, just with this file. Upload <span class="mono">main_functionized_cuda.py</span>, <span class="mono">stories.txt</span> and <span class="mono">runpod_setup.sh</span>, then in the pod's terminal:</p>
+<pre class="plain">bash runpod_setup.sh                                          # installs cupy and checks the GPU works
+nohup python main_functionized_cuda.py > cuda_run.log 2>&1 &   # trains, then saves and writes 3 stories
+tail -f cuda_run.log</pre>
+<p>When it's done, download <span class="mono">main_functionized_cuda_model.pkl</span>. It's saved as plain numpy, so it loads on your Mac too. Stop the pod after.</p>
+<p>The model and training are the same size as on your Mac, so this run should only take a minute or so on the GPU. The real payoff comes when you make the model or the training text bigger (level B or C on the <a href="training-time.html">Training Time</a> page).</p>
+
+<div class="backlink"><a href="training-time.html">← Training Time</a><a href="adam.html">← Adam, Simply</a><a href="modern.html">← Yours vs Modern</a></div>
+</div>
+</body>
+</html>

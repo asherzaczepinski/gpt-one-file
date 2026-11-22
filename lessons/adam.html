@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adam, Simply</title>
+<style>
+:root {
+  --bg: #f7f3ea; --paper: #fffdf7; --ink: #1f1b16; --muted: #6b6257; --line: #e3dccd;
+  --accent: #b4441f; --accent-soft: #f6dfd3; --good: #1d5a3c; --good-soft: #dbe9e1;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --good-soft: #1d3428; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --good-soft: #1d3428; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 40px 16px 80px; }
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2em 0 .6em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .82rem; line-height: 1.55; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: .8em 0 1.2em; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 1.2em 0; box-shadow: var(--shadow); }
+.card > :last-child { margin-bottom: 0; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; }
+.note > :last-child { margin-bottom: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0 12px; }
+button { font: 600 .85rem/1 "Avenir Next", system-ui, sans-serif; background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 11px; cursor: pointer; }
+button:hover, button.on { background: var(--accent-soft); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); font-family: "SF Mono", Menlo, monospace; }
+th { font: 600 .7rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+th:first-child, td:first-child { text-align: left; }
+.scroll { overflow-x: auto; }
+.sum { font: 500 .92rem/1.5 "Avenir Next", system-ui, sans-serif; margin-top: 10px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .two { grid-template-columns: 1fr; } }
+.two .card { margin: 0; }
+.big { font: 700 1.6rem/1.2 "SF Mono", Menlo, monospace; }
+.lab { font: 600 .75rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.backlink { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; gap: 18px; flex-wrap: wrap; }
+.backlink a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow">Training · how the numbers get nudged</div>
+<h1>Adam, Simply</h1>
+<p class="lede">Backprop tells every number which way is downhill. Adam decides <b>how far</b> each number should actually step. It's the reason your model got to 3.48 instead of 3.61.</p>
+
+<h2>The plain way, and its two problems</h2>
+<p>Plain nudging is one line: <span class="mono">number -= learning_rate * gradient</span>. It has two problems.</p>
+<p><b>Problem 1: gradients come in wildly different sizes.</b> In your model, some numbers always get gradients around 50, others around 0.0001. One learning rate can't be right for both.</p>
+<div class="two">
+  <div class="card"><div class="lab">gradient always 50</div><div class="big">moves 0.15</div><p style="font-size:.9rem;margin:.3em 0 0">plain nudging, learning rate 0.003. way too far, it overshoots</p></div>
+  <div class="card"><div class="lab">gradient always 0.0001</div><div class="big">moves 0.0000003</div><p style="font-size:.9rem;margin:.3em 0 0">same learning rate. basically never moves</p></div>
+</div>
+<p style="margin-top:1em"><b>Problem 2: gradients are noisy.</b> Each step only looks at 16 windows out of the whole text, so the gradient points a slightly different random way every step and the nudges zigzag.</p>
+
+<h2>Adam's fix: every number keeps two memories</h2>
+<p>For each of the 2.4 million numbers, Adam keeps two running averages and updates them every step:</p>
+<pre>average_gradient = 0.9  * average_gradient + 0.1  * gradient       # which way it's been pointing
+average_squared  = 0.95 * average_squared  + 0.05 * gradient ** 2  # how big its gradients usually are
+
+step = learning_rate * average_gradient / sqrt(average_squared)</pre>
+<p><b>Memory 1 fixes the noise.</b> It's mostly the old average plus a bit of the new gradient, so it remembers roughly the last 10 steps. If the gradient keeps pointing the same way, the average builds up. If it keeps flipping, the flips cancel out.</p>
+<p><b>Memory 2 fixes the sizes.</b> Dividing by "how big this number's gradients usually are" cancels out the size. A number with gradients around 50 and a number with gradients around 0.0001 both end up stepping about <span class="mono">learning_rate</span>.</p>
+
+<h2>Try it: one number, step by step</h2>
+<p>Pick what kind of gradients this one number gets, and watch the two memories and the step Adam takes (learning rate 0.003).</p>
+<div class="card">
+  <div class="row">
+    <button data-k="steady">steady: always +1</button>
+    <button data-k="flip">flipping: +1, −1, +1, −1</button>
+    <button data-k="tiny">tiny but steady: always 0.0001</button>
+    <button data-k="noisy">noisy, leaning positive</button>
+  </div>
+  <div class="scroll"><table id="t"></table></div>
+  <div class="sum" id="sum"></div>
+</div>
+
+<h2>The startup fix</h2>
+<p>Both memories start at 0. After step 1, <span class="mono">average_gradient</span> is only <span class="mono">0.1 * gradient</span>, way too small. So Adam divides by <span class="mono">(1 − 0.9<sup>step</sup>)</span>: at step 1 that's dividing by 0.1, which gives the real gradient back. A few dozen steps in, 0.9<sup>step</sup> is about 0 and it's dividing by about 1, so it stops mattering. The table above includes this fix.</p>
+
+<h2>Why it needed 16 windows in your runs</h2>
+<p>Adam takes close to a full-size step whenever the direction looks consistent. With just <b>1 window per step</b>, every gradient is so noisy that Adam kept taking full-size steps in random directions, and run2 got stuck at a test loss of 4.04. Averaging <b>16 windows</b> made the gradients smooth enough, and run4 reached 3.48, the best so far.</p>
+
+<div class="note">
+<p><b>In one line:</b> Adam = move each number by about the learning rate, in the direction its gradient has <i>consistently</i> been pointing, no matter how big or small its gradients are.</p>
+</div>
+
+<div class="backlink"><a href="training-time.html">How long would real training take? →</a><a href="backprop.html">← Backprop Rules</a></div>
+</div>
+
+<script>
+(function () {
+  const lr = 0.003, b1 = 0.9, b2 = 0.95, N = 12;
+  const kinds = {
+    steady: () => Array(N).fill(1),
+    flip: () => Array.from({ length: N }, (_, i) => i % 2 ? -1 : 1),
+    tiny: () => Array(N).fill(0.0001),
+    noisy: () => [1.6, -0.4, 0.9, 1.8, -0.9, 0.7, 1.3, -0.2, 1.1, 0.4, 1.5, -0.6],
+  };
+  const fmt = v => {
+    if (v === 0) return "0";
+    const a = Math.abs(v);
+    if (a < 0.001) return v.toExponential(1);
+    return (+v.toFixed(a < 1 ? 4 : 3)).toString();
+  };
+  function run(k) {
+    document.querySelectorAll('button[data-k]').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+    const g = kinds[k]();
+    let m = 0, v = 0, adamTotal = 0, plainTotal = 0;
+    let rows = '<tr><th>step</th><th>gradient</th><th>avg gradient</th><th>avg squared</th><th>adam step</th><th>plain step</th></tr>';
+    g.forEach((grad, i) => {
+      m = b1 * m + (1 - b1) * grad;
+      v = b2 * v + (1 - b2) * grad * grad;
+      const mh = m / (1 - b1 ** (i + 1)), vh = v / (1 - b2 ** (i + 1));
+      const step = lr * mh / (Math.sqrt(vh) + 1e-8), plain = lr * grad;
+      adamTotal += step; plainTotal += plain;
+      rows += `<tr><td>${i + 1}</td><td>${fmt(grad)}</td><td>${fmt(m)}</td><td>${fmt(v)}</td><td>${fmt(step)}</td><td>${fmt(plain)}</td></tr>`;
+    });
+    document.getElementById('t').innerHTML = rows;
+    const msg = {
+      steady: 'Steady gradient: Adam steps about 0.003 every time, which is exactly the learning rate.',
+      flip: 'Flipping gradient: Adam\'s steps shrink, because the flips cancel out in its average. It barely moves, which is right, since there\'s no real direction here.',
+      tiny: 'Tiny but steady: Adam still steps about 0.003, the same as the big steady one. Plain nudging steps 0.0000003 and would take forever.',
+      noisy: 'Noisy but leaning positive: Adam\'s steps stay mostly positive and steady even when one gradient goes negative, so the noise gets smoothed out.',
+    }[k];
+    document.getElementById('sum').innerHTML = `${msg}<br>Total moved after ${N} steps: adam <b>${fmt(adamTotal)}</b>, plain <b>${fmt(plainTotal)}</b>.`;
+  }
+  document.querySelectorAll('button[data-k]').forEach(b => b.addEventListener('click', () => run(b.dataset.k)));
+  run('steady');
+})();
+</script>
+</body>
+</html>

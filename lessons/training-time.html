@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training Time</title>
+<style>
+:root {
+  --bg: #f7f3ea; --paper: #fffdf7; --ink: #1f1b16; --muted: #6b6257; --line: #e3dccd;
+  --accent: #b4441f; --accent-soft: #f6dfd3;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; }
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2em 0 .6em; }
+h3 { font-size: 1.05rem; margin: 1.3em 0 .4em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 1.2em 0; box-shadow: var(--shadow); }
+.card > :last-child { margin-bottom: 0; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; }
+.note > :last-child { margin-bottom: 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .4em 0 .8em; }
+th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .72rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+td.num { font-family: "SF Mono", Menlo, monospace; white-space: nowrap; }
+td.hl { font-weight: 700; }
+.scroll { overflow-x: auto; }
+.est { font: 500 .78rem/1.3 "Avenir Next", system-ui, sans-serif; color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 1em 0; }
+@media (max-width: 560px) { .stats { grid-template-columns: 1fr; } }
+.stat { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.stat .v { font: 700 1.5rem/1.2 "SF Mono", Menlo, monospace; }
+.stat .l { font: 500 .82rem/1.35 "Avenir Next", system-ui, sans-serif; color: var(--muted); margin-top: 4px; }
+.backlink { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; gap: 18px; flex-wrap: wrap; }
+.backlink a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow">Planning · what would real training cost</div>
+<h1>Training Time</h1>
+<p class="lede">How long would it take to train this model properly, on your MacBook versus a RunPod pod running plain numpy? The Mac numbers are measured on your M4. The pod and GPU numbers are estimates, and they're labelled that way.</p>
+
+<h2>First: what's actually holding the model back</h2>
+<p>Your model already trains to its best in <b>under 6 minutes</b> (test loss 3.48). Training it longer makes it worse, because it starts memorizing the stories (run 5 went from 3.58 back up to 4.26). So more time alone won't make it good. To get <i>truly</i> good, it needs <b>more text</b> (and eventually a bigger model). Time is really a question of how much text you feed it.</p>
+
+<h2>Measured on your Mac</h2>
+<div class="stats">
+  <div class="stat"><div class="v">6,800</div><div class="l">tokens/sec, 1 core, 16 windows at once (batched, like main_functionized3.py)</div></div>
+  <div class="stat"><div class="v">6,700</div><div class="l">tokens/sec with all 10 cores. <b>No faster</b>: the matrices are too small for numpy to split across cores</div></div>
+  <div class="stat"><div class="v">3,700</div><div class="l">tokens/sec, your main_functionized.py (one window at a time + adam + test checks)</div></div>
+</div>
+<p>"Tokens/sec" here means tokens trained on per second: forward + backward. Training time = how many tokens you train on ÷ tokens/sec.</p>
+
+<h2>Plain numpy on RunPod: the GPU does nothing</h2>
+<p>This is the important part. <b>numpy only ever runs on the CPU.</b> If you rent a GPU pod and run <span class="mono">main_functionized.py</span> or <span class="mono">main_functionized2.py</span> as they are, the code runs on the pod's CPU and the GPU sits there unused, while you pay for it by the hour.</p>
+<p>And the pod's CPU won't beat your Mac: pod CPUs are server chips that are usually slower per core than an M4, and your Mac test just showed this code doesn't get faster with more cores. So expect <b>about the same speed as your Mac, or slower</b> (roughly 2,000–7,000 tokens/sec).</p>
+<p>The only way a pod gets faster is using the GPU, which means CuPy (<span class="mono">main_functionized3.py</span>). That column is in the table below too, for comparison, but it's a rough estimate, since it hasn't been run on a GPU yet.</p>
+
+<h2>The three levels of "trained"</h2>
+<div class="scroll">
+<table>
+  <tr><th>What</th><th>Tokens to train on</th><th>Your Mac<br><span class="est">measured speed</span></th><th>RunPod, plain numpy<br><span class="est">estimate: CPU only</span></th><th>RunPod + CuPy<br><span class="est">rough estimate</span></th></tr>
+  <tr>
+    <td><b>A. What you did today</b><br>2.4M numbers, stories.txt. best it can do with this text: test loss about 3.48</td>
+    <td class="num">1.3 million</td>
+    <td class="num hl">6 min<br><span class="est">(measured)</span></td>
+    <td class="num">3–11 min</td>
+    <td class="num">seconds</td>
+  </tr>
+  <tr>
+    <td><b>B. Same model, enough text</b><br>about 20 tokens per learned number (the "Chinchilla" rule), so no more memorizing. needs about <b>230× more stories</b> than stories.txt</td>
+    <td class="num">49 million</td>
+    <td class="num hl">2 hours<br><span class="est">(batched)</span><br>3.7 hours<br><span class="est">(your one-window loop)</span></td>
+    <td class="num">2–7 hours</td>
+    <td class="num">1–5 min</td>
+  </tr>
+  <tr>
+    <td><b>C. Truly good little story writer</b><br>a bigger model (about 30 million numbers: 512 per token, 8 blocks, sees 256 tokens back), trained on a big story dataset with 20 tokens per number. this is the size where small models start writing stories that stay on track</td>
+    <td class="num">600 million</td>
+    <td class="num hl">2–3 weeks<br><span class="est">(nonstop)</span></td>
+    <td class="num">2.5–8 weeks</td>
+    <td class="num">4–14 hours</td>
+  </tr>
+</table>
+</div>
+<p class="est">How these were worked out: A is measured (6 minutes with your one-window loop; batched it would be about 3). B = 49 million tokens ÷ 6,800 (or 3,700) tokens/sec. The plain-numpy pod column = the Mac's time scaled by the pod CPU being 2,000–7,000 tokens/sec instead of 6,800. C: the bigger model does roughly 15–20× more math per token than yours, so about 400 tokens/sec on your Mac, and 600 million ÷ 400 ≈ 17 days. The GPU column assumes a mid-range GPU is roughly 30–100× faster than one Mac core at this size, which is a guess until it's actually measured on a pod.</p>
+
+<div class="note">
+<p><b>Bottom line:</b></p>
+<ul style="margin:.2em 0 0">
+  <li><b>A</b> is done. Your Mac does it in 6 minutes.</li>
+  <li><b>B</b> is very doable on your Mac: a couple of hours, plugged in with the lid open. What you'd need is more story text, not more computer.</li>
+  <li><b>C</b> is where a GPU really matters. But plain numpy on RunPod doesn't use the GPU, so it would be just as slow as your Mac. For C, run <span class="mono">main_functionized3.py</span> with CuPy on the pod.</li>
+</ul>
+</div>
+
+<h2>Where more text would come from</h2>
+<p>The book your <span class="mono">gpt.txt</span> follows trains on <b>TinyStories</b>, a free public dataset of about 2 million short, simple children's stories (written by GPT-3.5 and GPT-4 to teach small models). It's the same kind of text as <span class="mono">stories.txt</span>, just hundreds of times more of it. Swapping in a bigger chunk of it is the single biggest upgrade you can make.</p>
+
+<div class="backlink"><a href="adam.html">← Adam, Simply</a><a href="modern.html">← Yours vs Modern</a></div>
+</div>
+</body>
+</html>

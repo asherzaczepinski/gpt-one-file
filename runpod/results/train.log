@@ -1,0 +1,59 @@
+NVIDIA RTX 2000 Ada Generation, 16380 MiB
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+cupy works: 1000000000.0
+downloaded 382M of stories
+97,488,678 tokens, 24,596 different ones, tokenized in 47 s
+(1, 128, 24596)
+loss 10.158, random guessing would be 10.110
+78 gradients, one for every array in params: 78
+running on the GPU (cupy)
+model: 256 numbers per token, 6 blocks, 8 heads, sees 128 tokens back, 17,389,588 learned numbers. 32 windows per step, training for 222.0 minutes
+test loss before training: 10.153 (random guessing: 10.110)
+0.152 s per step (26,944 tokens/sec) -> 87,619 steps in 222.0 min = 358,887,424 tokens = 3.72 trips through the text
+step 3,504/87,619  train 2.621  test 2.060  (best 2.060)  8.8 min
+step 7,008/87,619  train 2.071  test 1.920  (best 1.920)  17.7 min
+step 10,512/87,619  train 1.958  test 1.842  (best 1.842)  26.6 min
+step 14,016/87,619  train 1.893  test 1.786  (best 1.786)  35.5 min
+step 17,520/87,619  train 1.853  test 1.758  (best 1.758)  44.5 min
+step 21,024/87,619  train 1.817  test 1.726  (best 1.726)  53.4 min
+step 24,528/87,619  train 1.790  test 1.708  (best 1.708)  62.3 min
+step 28,032/87,619  train 1.769  test 1.699  (best 1.699)  71.2 min
+step 31,536/87,619  train 1.748  test 1.680  (best 1.680)  80.1 min
+step 35,040/87,619  train 1.731  test 1.675  (best 1.675)  89.0 min
+step 38,544/87,619  train 1.714  test 1.646  (best 1.646)  97.9 min
+step 42,048/87,619  train 1.699  test 1.629  (best 1.629)  106.8 min
+step 45,552/87,619  train 1.685  test 1.628  (best 1.628)  115.7 min
+step 49,056/87,619  train 1.670  test 1.612  (best 1.612)  124.6 min
+step 52,560/87,619  train 1.658  test 1.605  (best 1.605)  133.6 min
+step 56,064/87,619  train 1.644  test 1.591  (best 1.591)  142.5 min
+step 59,568/87,619  train 1.632  test 1.586  (best 1.586)  151.5 min
+step 63,072/87,619  train 1.622  test 1.582  (best 1.582)  160.4 min
+step 66,576/87,619  train 1.614  test 1.568  (best 1.568)  169.4 min
+step 70,080/87,619  train 1.605  test 1.560  (best 1.560)  178.3 min
+step 73,584/87,619  train 1.596  test 1.561  (best 1.560)  187.2 min
+step 77,088/87,619  train 1.589  test 1.553  (best 1.553)  196.2 min
+step 80,592/87,619  train 1.586  test 1.545  (best 1.545)  205.1 min
+step 84,096/87,619  train 1.581  test 1.546  (best 1.545)  214.1 min
+step 87,600/87,619  train 1.576  test 1.545  (best 1.545)  223.0 min
+step 87,619/87,619  train 1.575  test 1.546  (best 1.545)  223.0 min
+
+done. best test loss 1.545
+
+Once upon a time, there was a little boy named Tom. Tom loved to play outside with his friends. One day, Tom and his friends were playing near a big puddle. They were having a lot of fun.
+Suddenly, Tom's hat fell off his head. It fell off his head! Tom was sad and did not know what to do. His friend Sam found a big leaf and carefully picked it up.
+Tom's friends saw what happened and felt sad too. They tried to get the hat back, but nothing happened. They asked Tom to give them back, but Tom was too small to move his head off.
+
+Tom and Sam went to the park. They played on the swings and slide. They had fun. But soon, they got very tired. They needed to sat down on the grass. Tom said, "Sam, let's go home now. We need to rest."
+Sam agreed. They sat down under a big tree. Tom looked at Sam and said, "Sam, I am tired too. Let's rest." They both lay down under the tree. They took a long nap. At the end of the day, they were both better.
+<|endoftext|>
+One sunny day, a little girl named Lucy went to the park
+
+The little cat was sad because it could not find its own home. The big dog said, "I will help you find your home." They walked and walked, but the little cat did not see the big dog.
+Then, something unexpected happened. The big dog found a way to his home. The big dog went to the little cat's home, and the little cat was happy to see her home. They both knew that the big dog would be there, just to be nice and not to be mad at a little cat.
+<|endoftext|>
+Once upon a time, there was a big, hairy dog
+
+Lily found a shiny key in the garden. She was very happy. She knew it was a special key. She showed it to her friends, and they all wanted to find one too. They went to the forest to find the key.
+In the forest, Lily and her friends found the key. They were all excited. They took turns with the key and found where the key would unlock the door. When they opened the door, they found a big room full of toys! They played and played, and they were very happy. The key had unlocked the door, and they could now go inside and play with their new toys.
+<|
+REMOTE-DONE

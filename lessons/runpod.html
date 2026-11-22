@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Train on RunPod</title>
+<style>
+:root {
+  --bg: #f7f3ea; --paper: #fffdf7; --ink: #1f1b16; --muted: #6b6257; --line: #e3dccd;
+  --accent: #b4441f; --accent-soft: #f6dfd3; --good: #1d5a3c; --good-soft: #dbe9e1;
+  --shadow: 0 1px 0 rgba(0,0,0,.04), 0 6px 24px rgba(60,40,10,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+    --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --good-soft: #1d3428; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17150f; --paper: #201d16; --ink: #ede6d8; --muted: #a69c8c; --line: #352f25;
+  --accent: #ec7a52; --accent-soft: #3d2519; --good: #9fdcb9; --good-soft: #1d3428; --shadow: none;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 16px 80px; }
+h1, h2, h3 { font-family: "Avenir Next", "Segoe UI", system-ui, sans-serif; line-height: 1.2; letter-spacing: -.01em; }
+h1 { font-size: 2.3rem; margin: .2em 0 .3em; }
+h2 { font-size: 1.35rem; margin: 2em 0 .6em; }
+h3 { font-size: 1.05rem; margin: 1.4em 0 .4em; }
+p { margin: 0 0 1em; }
+a { color: var(--accent); }
+code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .88em; }
+pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .8rem; line-height: 1.55; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; overflow-x: auto; margin: .6em 0 1.2em; }
+pre.cmd { border-left: 3px solid var(--accent); font-size: .9rem; }
+.eyebrow { font: 600 .78rem/1 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; }
+.note > :last-child { margin-bottom: 0; }
+.ok { border-left: 3px solid var(--good); background: var(--good-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; margin: 1.2em 0; }
+.ok > :last-child { margin-bottom: 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .4em 0 1em; }
+th, td { text-align: left; padding: 8px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 .72rem/1.2 "Avenir Next", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.scroll { overflow-x: auto; }
+ol.steps > li { margin-bottom: 1.2em; }
+.backlink { font: 500 .88rem/1 "Avenir Next", system-ui, sans-serif; margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); display: flex; gap: 18px; flex-wrap: wrap; }
+.backlink a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="eyebrow">Doing it for real · about $1</div>
+<h1>Train on RunPod</h1>
+<p class="lede">One command rents a GPU, trains a bigger version of your model on far more story text, copies the results back to your Mac, and deletes the pod. It's capped so the whole thing costs about $1.</p>
+
+<h2>The command</h2>
+<p>In the Terminal app, from the <span class="mono">gpt-one-file</span> folder:</p>
+<pre class="cmd">caffeinate -i bash runpod/train_on_runpod.sh</pre>
+<p>For a different budget, put it in front:</p>
+<pre class="cmd">BUDGET=0.50 caffeinate -i bash runpod/train_on_runpod.sh</pre>
+<p>It prints progress every 2 minutes. Leave the charger in. It takes about as long as the budget buys (roughly 2–3 hours for $1 on a cheap GPU).</p>
+
+<h2>What you need first</h2>
+<div class="scroll">
+<table>
+  <tr><th>Thing</th><th>Status</th></tr>
+  <tr><td>A RunPod account with credit</td><td>You already have one (the Race Hawks account). The script checks the balance first and refuses to start if it's below the budget + $0.25.</td></tr>
+  <tr><td>A RunPod API key</td><td>By default it reads the same key file your <span class="mono">ASHERLLM GOLDEN/01</span> <span class="mono">runpod_train.sh</span> used (in Race Hawks Older / backend_v2 / cloud-render-test). Or set your own with <span class="mono">export RUNPOD_API_KEY=...</span> before running.</td></tr>
+  <tr><td>An SSH key</td><td><span class="mono">~/.ssh/id_ed25519</span>: already there (checked).</td></tr>
+</table>
+</div>
+<div class="note">
+<p><b>Race Hawks heads-up:</b> this spends from the same account balance as your recordings. Your notes mention a recording queue that waits for the balance to be at least $15, so if one of those is waiting, this $1 pushes it back a little.</p>
+</div>
+
+<h2>What it trains</h2>
+<p>Today's run showed the real limit is text, not computing power. So this run fixes that and makes the model bigger to use it:</p>
+<div class="scroll">
+<table>
+  <tr><th></th><th>main_functionized.py (today)</th><th>This RunPod run</th></tr>
+  <tr><td>Training text</td><td>stories.txt: 215,000 tokens</td><td>400 MB of <b>TinyStories</b>, about 100 million tokens (~450× more)</td></tr>
+  <tr><td>Numbers per token</td><td>128</td><td>256</td></tr>
+  <tr><td>Heads</td><td>4 of 32</td><td>8 of 32</td></tr>
+  <tr><td>Blocks</td><td>6</td><td>6</td></tr>
+  <tr><td>Sees back</td><td>64 tokens</td><td>128 tokens (remembers about twice as much of the story)</td></tr>
+  <tr><td>Windows per step</td><td>16</td><td>32</td></tr>
+  <tr><td>Training length</td><td>1,250 steps</td><td>however many steps fit in the budget (it times itself and plans the learning-rate slide to end right at the deadline)</td></tr>
+  <tr><td>Where</td><td>Mac CPU, numpy</td><td>RunPod GPU, CuPy</td></tr>
+</table>
+</div>
+<p>The code is <span class="mono">runpod/train_tinystories.py</span>: the same forward and backward as <span class="mono">main_functionized_cuda.py</span>, with a different data loader and a time-budgeted training loop. A tiny version was tested on your Mac and runs start to finish (trains, saves the best model, writes stories).</p>
+
+<h2>What the command does, step by step</h2>
+<ol class="steps">
+  <li><b>Checks the balance</b> through RunPod's API, and stops if there isn't enough.
+<pre>curl -H "Authorization: Bearer $APIKEY" https://api.runpod.io/graphql -d '{"query":"{ myself { clientBalance } }"}'</pre></li>
+  <li><b>Rents a GPU,</b> trying cheap ones in order until one is in stock (RTX 2000 Ada, A4000, A4500, A5000, 4000 Ada: the same list your Race Hawks recordings use), with the same CUDA image.
+<pre>mutation { podFindAndDeployOnDemand(input: { imageName: "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
+  gpuTypeId: "NVIDIA RTX 2000 Ada Generation", gpuCount: 1, cloudType: SECURE, containerDiskInGb: 30,
+  ports: "22/tcp", env: [{ key: "PUBLIC_KEY", value: "&lt;your ssh key&gt;" }] }) { id costPerHr } }</pre>
+<p>Everything goes through RunPod's GraphQL API at <span class="mono">api.runpod.io/graphql</span>. The older <span class="mono">rest.runpod.io</span> address stopped existing in November 2026, which is why the first try failed.</p></li>
+  <li><b>Works out the time limit from the price.</b> For example, at $0.30/hr, $1 × 0.95 buys 190 minutes. It takes 15 minutes off for setup, so it trains for 175 minutes.</li>
+  <li><b>Waits for SSH</b>, then sets a <b>self-destruct timer</b> on the pod: when the limit is up, the pod deletes itself through the API. That works even if your Mac falls asleep or loses wifi, so it can't run past the budget.</li>
+  <li><b>Copies the training script up</b> and starts setup + training in the background on the pod, so an SSH hiccup can't kill it:
+<pre>pip install --break-system-packages cupy-cuda12x tiktoken numpy   # Ubuntu 24.04 blocks plain pip
+curl -sL https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStoriesV2-GPT4-train.txt | head -c 400000000 &gt; tinystories.txt
+TEXT_FILE=tinystories.txt TRAIN_MINUTES=175 python -u train_tinystories.py</pre></li>
+  <li><b>Shows progress every 2 minutes</b>: train loss, test loss on stories it never saw, and the best so far. The best model is saved whenever the test loss improves.</li>
+  <li><b>Copies the results back</b> to <span class="mono">runpod/results/</span>: <span class="mono">out/best_model.pkl</span>, <span class="mono">out/stories.txt</span> (4 stories it writes at the end) and <span class="mono">train.log</span>.</li>
+  <li><b>Deletes the pod and checks it's really gone.</b> Your encode test found a DELETE that didn't take once, so it repeats the delete until the pod is no longer listed. It also deletes the pod if the script crashes or you press Ctrl+C. Then it prints the balance before and after.</li>
+</ol>
+
+<div class="ok">
+<p><b>Four safety nets against spending too much:</b> (1) it won't start without enough balance, (2) training is planned to fit the budget, (3) the pod's own timer deletes it at the limit no matter what, (4) the script deletes and double-checks the pod at the end, or on any crash or Ctrl+C.</p>
+</div>
+
+<h2>How the first real run went (Nov 21, 2026)</h2>
+<div class="ok">
+<p><b>Cost $0.93</b> on an RTX 2000 Ada at $0.24/hr. 17.4 million learned numbers, 97.5 million tokens of TinyStories, 26,900 tokens/sec, 87,619 steps in 222 minutes. Test loss went from 10.15 (random) to <b>1.545</b>, and it never started memorizing. Pod deleted and verified at the end.</p>
+</div>
+<p>To write your own stories with it on the Mac (no GPU needed):</p>
+<pre class="cmd">.venv/bin/python runpod/write_story.py "Once upon a time, a dog"</pre>
+
+<h2>After it's done</h2>
+<pre class="cmd">cat runpod/results/out/stories.txt      # the stories it wrote
+cat runpod/run_log.txt                  # everything that happened, with times and the balance before/after</pre>
+<p>To double-check nothing is still running (and costing money), open runpod.io → <b>Pods</b>. It should be empty.</p>
+
+<h2>Things to know</h2>
+<ul>
+  <li><b>How smart will it get?</b> Clearly better than today's: more coherent sentences that stay on topic longer, because it has 450× more text and remembers twice as far back. But it's still a small model, so don't expect perfect stories. The test loss numbers can't be compared directly with today's 3.48, because a different set of text gives a different vocabulary.</li>
+</ul>
+
+<div class="backlink"><a href="cuda.html">← NumPy to CUDA</a><a href="training-time.html">← Training Time</a></div>
+</div>
+</body>
+</html>
